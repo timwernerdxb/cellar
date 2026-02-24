@@ -11,8 +11,13 @@ const PORT = process.env.PORT || 3000;
 // Database pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : false,
 });
 app.locals.pool = pool;
+
+pool.on('error', (err) => {
+  console.error('Unexpected pool error:', err.message);
+});
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
