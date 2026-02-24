@@ -255,6 +255,7 @@
         <button class="filter-chip" data-filter="White" onclick="setCellarFilter('White', this)">White</button>
         <button class="filter-chip" data-filter="Rosé" onclick="setCellarFilter('Rosé', this)">Ros&eacute;</button>
         <button class="filter-chip" data-filter="Sparkling" onclick="setCellarFilter('Sparkling', this)">Sparkling</button>
+        <button class="filter-chip" data-filter="Champagne" onclick="setCellarFilter('Champagne', this)">Champagne</button>
         <span class="filter-divider">|</span>
         <button class="filter-chip" data-filter="Scotch" onclick="setCellarFilter('Scotch', this)">Scotch</button>
         <button class="filter-chip" data-filter="Bourbon" onclick="setCellarFilter('Bourbon', this)">Bourbon</button>
@@ -264,6 +265,10 @@
         <span class="filter-divider">|</span>
         <button class="filter-chip" data-filter="Tequila" onclick="setCellarFilter('Tequila', this)">Tequila</button>
         <button class="filter-chip" data-filter="Mezcal" onclick="setCellarFilter('Mezcal', this)">Mezcal</button>
+        <span class="filter-divider">|</span>
+        <button class="filter-chip" data-filter="Junmai" onclick="setCellarFilter('Junmai', this)">Junmai</button>
+        <button class="filter-chip" data-filter="Daiginjo" onclick="setCellarFilter('Daiginjo', this)">Daiginjo</button>
+        <button class="filter-chip" data-filter="Nigori" onclick="setCellarFilter('Nigori', this)">Nigori</button>
         <span class="filter-divider">|</span>
         <button class="filter-chip" data-filter="Rum" onclick="setCellarFilter('Rum', this)">Rum</button>
         <div class="filter-spacer"></div>
@@ -293,25 +298,19 @@
         <button class="cat-btn active" data-cat="wine" onclick="setAddCategory('wine', this)">Wine</button>
         <button class="cat-btn" data-cat="whiskey" onclick="setAddCategory('whiskey', this)">Whiskey</button>
         <button class="cat-btn" data-cat="tequila" onclick="setAddCategory('tequila', this)">Tequila</button>
+        <button class="cat-btn" data-cat="sake" onclick="setAddCategory('sake', this)">Sake</button>
         <button class="cat-btn" data-cat="spirit" onclick="setAddCategory('spirit', this)">Spirit</button>
       </div>
 
       <!-- Scan / Photo Section -->
       <div class="scan-section">
         <div class="scan-options">
-          <div class="scan-option" onclick="startScanFlow()">
-            <div class="scan-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="2" height="16"/><rect x="6" y="4" width="1" height="16"/><rect x="9" y="4" width="2" height="16"/><rect x="13" y="4" width="1" height="16"/><rect x="16" y="4" width="3" height="16"/><rect x="21" y="4" width="1" height="16"/></svg>
-            </div>
-            <h4>Scan Bottle</h4>
-            <p>Scan barcode, then label — all in one step</p>
-          </div>
           <div class="scan-option" onclick="startLabelOnly()">
             <div class="scan-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
             </div>
-            <h4>Photo Label</h4>
-            <p>Take a photo of the front label only</p>
+            <h4>Scan Label</h4>
+            <p>Take a photo of the bottle label</p>
           </div>
           <div class="scan-option" onclick="document.getElementById('imageUpload').click()">
             <div class="scan-icon">
@@ -326,7 +325,7 @@
           <video id="cameraVideo" autoplay playsinline muted></video>
           <div class="camera-overlay"><div class="camera-frame"></div></div>
           <div class="scan-status-bar" id="scanStatusBar" style="display:none">
-            <span id="scanStatusText">Looking for barcode...</span>
+            <span id="scanStatusText">Position label in frame</span>
           </div>
           <div class="camera-controls">
             <button class="btn btn-secondary" onclick="cancelScanFlow()">Cancel</button>
@@ -412,6 +411,7 @@
                   <option value="White">White Wine</option>
                   <option value="Rosé">Ros&eacute;</option>
                   <option value="Sparkling">Sparkling</option>
+                  <option value="Champagne">Champagne</option>
                   <option value="Dessert">Dessert Wine</option>
                   <option value="Fortified">Fortified Wine</option>
                 </optgroup>
@@ -430,6 +430,15 @@
                 <optgroup label="Tequila" id="optTequila">
                   <option value="Tequila">Tequila</option>
                   <option value="Mezcal">Mezcal</option>
+                </optgroup>
+                <!-- Sake types -->
+                <optgroup label="Sake" id="optSake">
+                  <option value="Junmai">Junmai</option>
+                  <option value="Ginjo">Ginjo</option>
+                  <option value="Daiginjo">Daiginjo</option>
+                  <option value="Nigori">Nigori</option>
+                  <option value="Sparkling Sake">Sparkling Sake</option>
+                  <option value="Sake">Sake (Other)</option>
                 </optgroup>
                 <!-- Spirit types -->
                 <optgroup label="Spirits" id="optSpirits">
@@ -690,7 +699,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" onerror="console.log('ZXing fallback not loaded')"></script>
   <script src="app.js"></script>
 </body>
 </html>

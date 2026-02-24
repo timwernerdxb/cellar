@@ -9,16 +9,18 @@ const TASTINGS_KEY = 'vino_tastings';
 const THEME_KEY = 'vino_theme';
 
 const WHISKEY_TYPES = ['Scotch', 'Bourbon', 'Irish', 'Japanese', 'Rye', 'Single Malt', 'Blended', 'Tennessee'];
-const WINE_TYPES = ['Red', 'White', 'Rosé', 'Sparkling', 'Dessert', 'Fortified'];
+const WINE_TYPES = ['Red', 'White', 'Rosé', 'Sparkling', 'Champagne', 'Dessert', 'Fortified'];
 const TEQUILA_TYPES = ['Tequila', 'Mezcal'];
+const SAKE_TYPES = ['Junmai', 'Ginjo', 'Daiginjo', 'Nigori', 'Sparkling Sake', 'Sake'];
 const SPIRIT_TYPES = ['Rum', 'Cognac', 'Brandy', 'Gin', 'Vodka', 'Other Spirit'];
 const API_KEY_STORAGE = 'vino_openai_key';
 
 function isWhiskey(type) { return WHISKEY_TYPES.includes(type); }
 function isWine(type) { return WINE_TYPES.includes(type); }
 function isTequila(type) { return TEQUILA_TYPES.includes(type); }
-function isSpirit(type) { return SPIRIT_TYPES.includes(type) || WHISKEY_TYPES.includes(type) || TEQUILA_TYPES.includes(type); }
-function isSpiritOrWhiskey(type) { return isWhiskey(type) || isTequila(type) || SPIRIT_TYPES.includes(type); }
+function isSake(type) { return SAKE_TYPES.includes(type); }
+function isSpirit(type) { return SPIRIT_TYPES.includes(type) || WHISKEY_TYPES.includes(type) || TEQUILA_TYPES.includes(type) || SAKE_TYPES.includes(type); }
+function isSpiritOrWhiskey(type) { return isWhiskey(type) || isTequila(type) || isSake(type) || SPIRIT_TYPES.includes(type); }
 
 // ============ AUTH STATE ============
 
@@ -649,7 +651,7 @@ let editingBottleId = null;
 
 // Ensure category, status, and market values on all bottles
 cellar.forEach(w => {
-  if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine';
+  if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : isSake(w.type) ? 'sake' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine';
   if (!w.status) w.status = 'active';
   if (!w.consumptionHistory) w.consumptionHistory = [];
   if (!w.marketValue || w.marketValue <= 0) w.marketValue = estimateMarketValue(w);
@@ -676,7 +678,7 @@ function setAddCategory(cat, btn) {
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 
-  const showSpirit = cat === 'whiskey' || cat === 'spirit' || cat === 'tequila';
+  const showSpirit = cat === 'whiskey' || cat === 'spirit' || cat === 'tequila' || cat === 'sake';
   document.querySelectorAll('.whiskey-field').forEach(el => el.style.display = showSpirit ? '' : 'none');
   document.querySelectorAll('.wine-field').forEach(el => el.style.display = showSpirit ? 'none' : '');
 
@@ -685,6 +687,7 @@ function setAddCategory(cat, btn) {
     wine: { producer: 'Producer / Winery', vintage: 'Vintage *', grape: 'Grape / Varietal', prodPH: 'e.g. Chateau Margaux', grapePH: 'e.g. Cabernet Sauvignon', regionPH: 'e.g. Bordeaux, France' },
     whiskey: { producer: 'Distillery / Producer', vintage: 'Bottling Year', grape: 'Grain / Mash Bill', prodPH: 'e.g. The Macallan', grapePH: 'e.g. Malted Barley', regionPH: 'e.g. Islay, Scotland' },
     tequila: { producer: 'Producer / Brand', vintage: 'Bottling Year', grape: 'Agave Type', prodPH: 'e.g. Clase Azul', grapePH: 'e.g. Blue Weber Agave', regionPH: 'e.g. Jalisco, Mexico' },
+    sake: { producer: 'Brewery / Producer', vintage: 'Bottling Year', grape: 'Rice Type', prodPH: 'e.g. Dassai', grapePH: 'e.g. Yamada Nishiki', regionPH: 'e.g. Niigata, Japan' },
     spirit: { producer: 'Producer / Brand', vintage: 'Bottling Year', grape: 'Base Ingredient', prodPH: 'e.g. Diplomatico', grapePH: 'e.g. Sugarcane', regionPH: 'e.g. Venezuela' },
   };
   const l = labels[cat] || labels.wine;
@@ -703,6 +706,7 @@ function setAddCategory(cat, btn) {
   const sel = document.getElementById('wineType');
   if (cat === 'whiskey') sel.value = 'Scotch';
   else if (cat === 'tequila') sel.value = 'Tequila';
+  else if (cat === 'sake') sel.value = 'Junmai';
   else if (cat === 'spirit') sel.value = 'Rum';
   else sel.value = 'Red';
 }
@@ -948,18 +952,19 @@ function renderCategoryChart() {
   const ctx = document.getElementById('categoryChart');
   if (!ctx) return;
   if (categoryChartInstance) categoryChartInstance.destroy();
-  const cats = { Wine: 0, Whiskey: 0, Tequila: 0, Spirit: 0 };
+  const cats = { Wine: 0, Whiskey: 0, Tequila: 0, Sake: 0, Spirit: 0 };
   cellar.filter(w => w.status !== 'consumed').forEach(w => {
     const qty = parseInt(w.quantity) || 1;
     if (isWhiskey(w.type)) cats.Whiskey += qty;
     else if (isTequila(w.type)) cats.Tequila += qty;
+    else if (isSake(w.type)) cats.Sake += qty;
     else if (SPIRIT_TYPES.includes(w.type)) cats.Spirit += qty;
     else cats.Wine += qty;
   });
   // Remove empty categories
   Object.keys(cats).forEach(k => { if (cats[k] === 0) delete cats[k]; });
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Spirit: '#6C3483' };
+  const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Sake: '#C45B28', Spirit: '#6C3483' };
   categoryChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
@@ -1473,10 +1478,7 @@ function removeWine(id) {
 // ============ CAMERA & SCANNING FLOW ============
 
 let cameraStream = null;
-let scanMode = 'idle'; // idle | barcode | label | label-only
-let barcodeInterval = null;
-let barcodeData = null; // data from barcode lookup, to merge with label
-let autoCapCountdown = null;
+let scanMode = 'idle'; // idle | label
 
 async function openCamera() {
   try {
@@ -1524,15 +1526,7 @@ async function openCamera() {
 }
 
 function closeCamera() {
-  stopBarcodeScan();
-  clearAutoCapCountdown();
   const video = document.getElementById('cameraVideo');
-  // Full cleanup of ZXing (reset is ok here since we're closing everything)
-  if (window._zxingReader) {
-    try { window._zxingReader.reset(); } catch(e) {}
-    window._zxingReader = null;
-  }
-  // Stop all camera tracks
   if (cameraStream) {
     try { cameraStream.getTracks().forEach(t => t.stop()); } catch(e) {}
     cameraStream = null;
@@ -1549,43 +1543,10 @@ function closeCamera() {
 
 function cancelScanFlow() {
   closeCamera();
-  barcodeData = null;
-}
-
-// === UNIFIED SCAN FLOW ===
-// Step 1: Open camera, look for barcode
-// Step 2: Barcode found → lookup → show result → prompt for label
-// Step 3: Capture label → GPT-4o Vision → merge with barcode data → fill form
-
-async function startScanFlow() {
-  barcodeData = null;
-  scanMode = 'barcode';
-
-  const preview = document.getElementById('cameraPreview');
-  preview.style.display = 'block';
-
-  // Always open camera ourselves — we manage the stream, barcode libs just decode
-  await openCamera();
-  setScanStatus('Point at the barcode on the back of the bottle...');
-  showToast('Scan the barcode first');
-  startBarcodeScan();
-
-  // Fallback: if no barcode detected within 12 seconds, skip to label capture
-  window._barcodeScanTimeout = setTimeout(() => {
-    if (scanMode === 'barcode') {
-      console.log('[Scan] Barcode timeout — skipping to label capture');
-      stopBarcodeScan();
-      setScanStatus('No barcode found — capture the front label instead', true);
-      showToast('No barcode found. Capture the label instead.');
-      scanMode = 'label';
-      startAutoCapCountdown(5);
-    }
-  }, 12000);
 }
 
 async function startLabelOnly() {
-  barcodeData = null;
-  scanMode = 'label-only';
+  scanMode = 'label';
   await openCamera();
   setScanStatus('Point at the front label and tap Capture');
 }
@@ -1598,280 +1559,14 @@ function setScanStatus(text, isSuccess) {
   textEl.innerHTML = text;
 }
 
-function startBarcodeScan() {
-  const video = document.getElementById('cameraVideo');
-  console.log('[Scan] Starting barcode scan. BarcodeDetector:', 'BarcodeDetector' in window, 'ZXing:', typeof ZXing !== 'undefined');
-
-  // Try native BarcodeDetector first (Chrome, Edge — NOT Safari)
-  if ('BarcodeDetector' in window) {
-    console.log('[Scan] Using native BarcodeDetector');
-    const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code', 'code_128'] });
-    let scanning = true;
-    barcodeInterval = setInterval(async () => {
-      if (!scanning) return;
-      if (!cameraStream || scanMode !== 'barcode') {
-        console.log('[Scan] BarcodeDetector stopping — stream:', !!cameraStream, 'mode:', scanMode);
-        stopBarcodeScan();
-        return;
-      }
-      // Wait for video to have actual frames
-      if (!video.videoWidth || video.readyState < 2) return;
-      try {
-        const barcodes = await detector.detect(video);
-        if (barcodes.length > 0 && scanning) {
-          scanning = false; // prevent duplicate detections
-          const code = barcodes[0].rawValue;
-          console.log('[Scan] Native BarcodeDetector found:', code);
-          // Stop the interval and timeout, but keep the camera stream alive
-          if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
-          if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
-          setScanStatus(`Barcode found: ${code} — looking up...`, true);
-          await lookupBarcodeForFlow(code);
-        }
-      } catch (e) {
-        // detect() can throw if video isn't ready — that's fine, just retry
-        if (e.name !== 'InvalidStateError') {
-          console.warn('[Scan] BarcodeDetector.detect error:', e.message);
-        }
-      }
-    }, 500);
-    return;
-  }
-
-  // Fallback: ZXing library — works on Safari, Firefox, and all browsers
-  if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
-    console.log('[Scan] Using ZXing BrowserMultiFormatReader (Safari/Firefox compatible)');
-    startZxingVideoScan();
-    return;
-  }
-
-  // No barcode scanning available — let user skip to label
-  console.log('[Scan] No barcode API available');
-  setScanStatus('Barcode scanning not available — tap Capture to photograph the label instead');
-}
-
-function startZxingVideoScan() {
-  const video = document.getElementById('cameraVideo');
-
-  // We already have our own camera stream open — feed it to ZXing for decoding
-  if (!cameraStream || !video.srcObject) {
-    console.error('[Scan] ZXing: no camera stream available');
-    setScanStatus('Camera not ready — tap Capture to photograph the label instead');
-    return;
-  }
-
-  const codeReader = new ZXing.BrowserMultiFormatReader();
-  window._zxingReader = codeReader;
-
-  console.log('[Scan] Starting ZXing decodeFromStream (using our camera stream)...');
-
-  // decodeFromStream uses OUR stream — doesn't open its own camera
-  codeReader.decodeFromStream(cameraStream, video, (result, err) => {
-    if (result) {
-      const code = typeof result.getText === 'function' ? result.getText() : result.text || String(result);
-      console.log('[Scan] ZXing barcode found:', code);
-
-      // Stop ZXing decoding but keep our camera stream alive
-      if (window._zxingReader) {
-        try { window._zxingReader.stopContinuousDecode(); } catch(e) {}
-        window._zxingReader = null;
-      }
-
-      // Clear the barcode timeout since we found one
-      if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
-
-      setScanStatus(`Barcode found: ${code} — looking up...`, true);
-      lookupBarcodeForFlow(code);
-    }
-    if (err && err.name !== 'NotFoundException') {
-      console.warn('[Scan] ZXing error:', err.name, err.message);
-    }
-  });
-  console.log('[Scan] ZXing decodeFromStream started');
-}
-
-function stopBarcodeScan() {
-  // Clear barcode timeout
-  if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
-  // Clear native BarcodeDetector interval
-  if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
-  // Stop ZXing decoding (but NOT the camera stream — we own it)
-  if (window._zxingReader) {
-    try {
-      if (typeof window._zxingReader.stopContinuousDecode === 'function') {
-        window._zxingReader.stopContinuousDecode();
-      }
-      // Don't call reset() — it kills the video stream
-      console.log('[Scan] ZXing decoding stopped');
-    } catch (e) {
-      console.warn('[Scan] ZXing stop error:', e.message);
-    }
-    window._zxingReader = null;
-  }
-}
-
-function clearAutoCapCountdown() {
-  if (autoCapCountdown) { clearInterval(autoCapCountdown); autoCapCountdown = null; }
-}
-
-// JSONP helper — works from file:// protocol where fetch() is blocked
-function jsonpFetch(url, callbackParam = 'callback', timeoutMs = 6000) {
-  return new Promise((resolve, reject) => {
-    const cbName = '_jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-    const timer = setTimeout(() => { cleanup(); reject(new Error('JSONP timeout')); }, timeoutMs);
-    function cleanup() {
-      clearTimeout(timer);
-      delete window[cbName];
-      const el = document.getElementById(cbName);
-      if (el) el.remove();
-    }
-    window[cbName] = (data) => { cleanup(); resolve(data); };
-    const sep = url.includes('?') ? '&' : '?';
-    const script = document.createElement('script');
-    script.id = cbName;
-    script.src = url + sep + callbackParam + '=' + cbName;
-    script.onerror = () => { cleanup(); reject(new Error('JSONP script error')); };
-    document.head.appendChild(script);
-  });
-}
-
-async function lookupBarcodeForFlow(code) {
-  console.log('[Scan] Barcode detected:', code, '- starting lookup...');
-  console.log('[Scan] Protocol:', location.protocol, '(file:// = fetch may be blocked)');
-  setScanStatus(`Barcode: ${code}. Looking up product...`);
-
-  // Helper: try a fetch with timeout
-  async function tryFetch(url, timeoutMs = 6000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const resp = await fetch(url, { signal: controller.signal });
-      clearTimeout(timer);
-      return resp;
-    } catch (err) {
-      clearTimeout(timer);
-      throw err;
-    }
-  }
-
-  // Try Open Food Facts — fetch first, then JSONP fallback for file:// protocol
-  try {
-    let data;
-    const offUrl = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
-    try {
-      console.log('[Scan] Trying OFF via fetch...');
-      const resp = await tryFetch(offUrl);
-      data = await resp.json();
-      console.log('[Scan] OFF fetch succeeded');
-    } catch (fetchErr) {
-      console.warn('[Scan] OFF fetch failed:', fetchErr.message, '- trying JSONP...');
-      // JSONP fallback — Open Food Facts supports it
-      data = await jsonpFetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
-      console.log('[Scan] OFF JSONP succeeded');
-    }
-    console.log('[Scan] OFF response status:', data.status, 'has product:', !!data.product, 'name:', data.product?.product_name);
-    if (data.status === 1 && data.product && data.product.product_name) {
-      barcodeData = parseOpenFoodFactsProduct(data.product);
-      console.log('[Scan] OFF match:', barcodeData.name, barcodeData.type, barcodeData.category);
-      setScanStatus(`Found: ${barcodeData.name}. Now scan the front label.`, true);
-      showToast(`Found: ${barcodeData.name}. Now scan the front label!`);
-      scanMode = 'label';
-      startAutoCapCountdown(5);
-      return;
-    }
-    console.log('[Scan] OFF: product not found for barcode', code);
-  } catch (err) {
-    console.warn('[Scan] OFF all attempts failed:', err.message);
-  }
-
-  // Try UPC Item DB (fetch only — no JSONP support)
-  try {
-    console.log('[Scan] Trying UPC Item DB via fetch...');
-    const resp2 = await tryFetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(code)}`);
-    const data2 = await resp2.json();
-    console.log('[Scan] UPC Item DB response:', data2.code, 'items:', data2.items?.length);
-    if (data2.items && data2.items.length > 0 && data2.items[0].title) {
-      const item = data2.items[0];
-      barcodeData = {
-        name: item.title, producer: item.brand || '', type: 'Red', category: 'wine',
-        region: '', vintage: null, age: null, abv: null, grape: '', price: null,
-        drinkFrom: null, drinkUntil: null,
-      };
-      const allText = ((item.title || '') + ' ' + (item.brand || '') + ' ' + (item.category || '') + ' ' + (item.description || '')).toLowerCase();
-      if (/whisk[e]?y|scotch|bourbon|single malt/.test(allText)) {
-        barcodeData.category = 'whiskey';
-        barcodeData.type = allText.includes('bourbon') ? 'Bourbon' : allText.includes('scotch') ? 'Scotch' : 'Single Malt';
-      } else if (/tequila|mezcal|agave/.test(allText)) {
-        barcodeData.category = 'tequila'; barcodeData.type = allText.includes('mezcal') ? 'Mezcal' : 'Tequila';
-      } else if (/\brum\b/.test(allText)) { barcodeData.category = 'spirit'; barcodeData.type = 'Rum'; }
-      else if (/cognac|brandy/.test(allText)) { barcodeData.category = 'spirit'; barcodeData.type = allText.includes('cognac') ? 'Cognac' : 'Brandy'; }
-      else if (/\bgin\b/.test(allText)) { barcodeData.category = 'spirit'; barcodeData.type = 'Gin'; }
-      else if (/wine/.test(allText)) {
-        if (/white/.test(allText)) barcodeData.type = 'White';
-        else if (/ros[eé]/.test(allText)) barcodeData.type = 'Rosé';
-        else if (/sparkling|champagne/.test(allText)) barcodeData.type = 'Sparkling';
-      }
-      setScanStatus(`Found: ${barcodeData.name}. Now scan the front label.`, true);
-      showToast(`Found: ${barcodeData.name}. Now scan the front label!`);
-      scanMode = 'label';
-      startAutoCapCountdown(5);
-      return;
-    }
-    console.log('[Scan] UPC Item DB: product not found for barcode', code);
-  } catch (err2) {
-    console.warn('[Scan] UPC Item DB fetch error:', err2.message);
-  }
-
-  // No match in barcode DBs — normal for spirits. Move straight to label scan.
-  console.log('[Scan] No barcode match found — moving to label scan');
-  setScanStatus('Now scan the front label — AI will identify the bottle', true);
-  showToast('Scan the front label for AI recognition');
-  scanMode = 'label';
-  startAutoCapCountdown(5);
-}
-
-async function startAutoCapCountdown(seconds) {
-  clearAutoCapCountdown();
-  // Clear barcode scan timeout
-  if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
-
-  // Ensure camera is active before starting countdown
-  const video = document.getElementById('cameraVideo');
-  console.log('[AutoCap] Camera check — srcObject:', !!video.srcObject, 'stream:', !!cameraStream, 'width:', video.videoWidth);
-  if (!video.srcObject || !cameraStream || !video.videoWidth) {
-    console.log('[AutoCap] Camera not active — re-opening for label capture');
-    await openCamera();
-  }
-
-  let remaining = seconds;
-  setScanStatus(`Now flip to the front label. Auto-capture in <span class="scan-countdown">${remaining}s</span>`, true);
-  autoCapCountdown = setInterval(() => {
-    remaining--;
-    if (remaining <= 0) {
-      clearAutoCapCountdown();
-      capturePhoto();
-    } else {
-      setScanStatus(`Now flip to the front label. Auto-capture in <span class="scan-countdown">${remaining}s</span>`, true);
-    }
-  }, 1000);
-}
 
 async function capturePhoto() {
-  clearAutoCapCountdown();
-  const wasBarcodeMode = scanMode === 'barcode';
   const video = document.getElementById('cameraVideo');
   const canvas = document.getElementById('captureCanvas');
-
-  // Stop any active barcode scanning (keeps camera stream alive)
-  stopBarcodeScan();
-
-  // Check if video is actually showing frames
-  console.log('[Capture] Video state — srcObject:', !!video.srcObject, 'width:', video.videoWidth, 'readyState:', video.readyState, 'cameraStream:', !!cameraStream);
 
   if (!video.srcObject || !video.videoWidth || video.readyState < 2) {
     console.log('[Capture] Video not ready — opening camera');
     await openCamera();
-    // Wait for real frames
     await new Promise(resolve => {
       let checks = 0;
       const check = setInterval(() => {
@@ -1884,21 +1579,13 @@ async function capturePhoto() {
     });
   }
 
-  // Capture the frame
   const w = video.videoWidth || 1280;
   const h = video.videoHeight || 720;
   canvas.width = w;
   canvas.height = h;
   canvas.getContext('2d').drawImage(video, 0, 0, w, h);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-  console.log('[Capture] Frame captured:', w, 'x', h);
   closeCamera();
-
-  if (wasBarcodeMode) {
-    // User tapped Capture during barcode phase — skip barcode, go straight to label
-    barcodeData = null;
-  }
-
   processLabelImage(dataUrl);
 }
 
@@ -1911,82 +1598,9 @@ function handleImageUpload(event) {
   event.target.value = '';
 }
 
-// Legacy aliases for any other references
+// Legacy aliases
 function startCamera() { openCamera(); }
 function stopCamera() { closeCamera(); }
-function startBarcodeScanner() { startScanFlow(); }
-
-// ---- Open Food Facts product parser ----
-
-function parseOpenFoodFactsProduct(p) {
-  const name = p.product_name || p.product_name_en || '';
-  const brand = p.brands || '';
-  const cats = (p.categories || '').toLowerCase();
-  const labels = (p.labels || '').toLowerCase();
-  const origins = p.origins || p.origin || '';
-  const allText = (name + ' ' + brand + ' ' + cats + ' ' + labels + ' ' + (p.generic_name || '')).toLowerCase();
-
-  // Detect type
-  const isWhisk = /whisk[e]?y|bourbon|scotch|rye whiskey|single malt|blended malt/.test(allText);
-  const isTequilaOrMezcal = /tequila|mezcal|agave/.test(allText);
-  const isRum = /\brum\b|\bron\b/.test(allText);
-  const isCognac = /cognac|brandy/.test(allText);
-  const isGin = /\bgin\b/.test(allText);
-
-  let type = 'Red';
-  let category = 'wine';
-  if (isWhisk) {
-    if (allText.includes('bourbon')) type = 'Bourbon';
-    else if (allText.includes('scotch') || allText.includes('single malt')) type = 'Scotch';
-    else if (allText.includes('irish')) type = 'Irish';
-    else if (allText.includes('japanese') || allText.includes('japan')) type = 'Japanese';
-    else if (allText.includes('rye')) type = 'Rye';
-    else if (allText.includes('tennessee')) type = 'Tennessee';
-    else type = 'Blended';
-    category = 'whiskey';
-  } else if (isTequilaOrMezcal) {
-    type = allText.includes('mezcal') ? 'Mezcal' : 'Tequila'; category = 'tequila';
-  } else if (isRum) { type = 'Rum'; category = 'spirit'; }
-  else if (isCognac) { type = allText.includes('cognac') ? 'Cognac' : 'Brandy'; category = 'spirit'; }
-  else if (isGin) { type = 'Gin'; category = 'spirit'; }
-  else {
-    if (/white wine|vin blanc|bianco/.test(cats)) type = 'White';
-    else if (/rosé|rose wine/.test(cats)) type = 'Rosé';
-    else if (/sparkling|champagne|prosecco|cava/.test(cats)) type = 'Sparkling';
-    else if (/dessert|sweet wine|sauternes|port/.test(cats)) type = 'Dessert';
-  }
-
-  const vintageMatch = (name + ' ' + (p.generic_name || '')).match(/\b(19[5-9]\d|20[0-2]\d)\b/);
-  const vintage = vintageMatch ? parseInt(vintageMatch[1]) : null;
-
-  // Age statement for whiskey
-  const ageMatch = allText.match(/(\d{1,2})\s*(?:year|yr|ans|jahre)/);
-  const age = ageMatch ? parseInt(ageMatch[1]) : null;
-
-  // ABV
-  const abv = p.nutriments?.alcohol_100g || null;
-
-  // Region
-  const regionMap = {
-    'bordeaux': 'Bordeaux, France', 'burgundy': 'Burgundy, France', 'champagne': 'Champagne, France',
-    'tuscany': 'Tuscany, Italy', 'toscana': 'Tuscany, Italy', 'rioja': 'Rioja, Spain',
-    'napa': 'Napa Valley, USA', 'islay': 'Islay, Scotland', 'speyside': 'Speyside, Scotland',
-    'highland': 'Highland, Scotland', 'kentucky': 'Kentucky, USA', 'tennessee': 'Tennessee, USA',
-    'japan': 'Japan', 'ireland': 'Ireland', 'marlborough': 'Marlborough, New Zealand',
-  };
-  let region = origins;
-  const rText = (origins + ' ' + cats + ' ' + labels).toLowerCase();
-  for (const [k, v] of Object.entries(regionMap)) { if (rText.includes(k)) { region = v; break; } }
-
-  const isSpirType = category !== 'wine';
-  return {
-    name: name || brand || 'Unknown', producer: brand || '', vintage, type,
-    grape: isSpirType ? '' : '', region, price: null, age, abv,
-    drinkFrom: !isSpirType && vintage ? vintage + 2 : null,
-    drinkUntil: !isSpirType && vintage ? vintage + (type === 'Red' ? 15 : 5) : null,
-    category,
-  };
-}
 
 // ---- Label Recognition via GPT-4o Vision ----
 
@@ -2018,8 +1632,8 @@ async function processLabelImage(dataUrl) {
   "name": "full product name",
   "producer": "producer/brand/distillery/winery",
   "vintage": year as number or null,
-  "type": one of "Red","White","Rosé","Sparkling","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Rum","Cognac","Brandy","Gin","Other Spirit",
-  "category": "wine" or "whiskey" or "tequila" or "spirit",
+  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Other Spirit",
+  "category": "wine" or "whiskey" or "tequila" or "sake" or "spirit",
   "grape": "grape varietal" or null,
   "region": "region, country",
   "age": age statement as number or null,
@@ -2058,35 +1672,31 @@ async function processLabelImage(dataUrl) {
       extracted.drinkUntil = extracted.vintage + (extracted.type === 'Red' ? 15 : extracted.type === 'White' ? 5 : 10);
     }
 
-    // Merge with barcode data if we have it
-    if (barcodeData) {
-      const merged = { ...barcodeData };
-      // Vision data takes priority for most fields, barcode fills gaps
-      for (const [key, val] of Object.entries(extracted)) {
-        if (val !== null && val !== undefined && val !== '') merged[key] = val;
-      }
-      // But if vision didn't find name/producer, use barcode
-      if (!extracted.name && barcodeData.name) merged.name = barcodeData.name;
-      if (!extracted.producer && barcodeData.producer) merged.producer = barcodeData.producer;
-      Object.assign(extracted, merged);
-      barcodeData = null;
-    }
-
     hideProcessing();
     showScanResults(extracted);
     populateFormFromScan(extracted);
+
+    // Auto-set label photo as bottle image if no image chosen yet
+    if (!pendingBottleImage && dataUrl) {
+      // Resize label photo for bottle image (max 400px wide)
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 400;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const resized = canvas.toDataURL('image/jpeg', 0.8);
+        setBottleImagePreview(resized, resized);
+      };
+      img.src = dataUrl;
+    }
+
     showToast(extracted.name ? `Recognized: ${extracted.name}` : 'Analysis complete — review fields.');
   } catch (err) {
     hideProcessing();
-    // If vision failed but we have barcode data, use that
-    if (barcodeData) {
-      showScanResults(barcodeData);
-      populateFormFromScan(barcodeData);
-      showToast('Vision failed, using barcode data. ' + (err.message || ''));
-      barcodeData = null;
-    } else {
-      showToast('Vision API error: ' + (err.message || 'Unknown error'));
-    }
+    showToast('Vision API error: ' + (err.message || 'Unknown error'));
     console.error('Vision API error:', err);
   }
 }
@@ -2118,7 +1728,7 @@ function showScanResults(extracted) {
 function populateFormFromScan(data) {
   // Auto-switch category
   const cat = data.category || 'wine';
-  const validCats = ['wine', 'whiskey', 'tequila', 'spirit'];
+  const validCats = ['wine', 'whiskey', 'tequila', 'sake', 'spirit'];
   const effectiveCat = validCats.includes(cat) ? cat : 'wine';
   const btn = document.querySelector(`[data-cat="${effectiveCat}"]`);
   if (btn) setAddCategory(effectiveCat, btn);
@@ -2450,7 +2060,7 @@ function parseCSVToBottles(headers, lines) {
     let type = 'Red';
     let category = 'wine';
 
-    if (ctType === 'Spirits' || ctCategory === 'Distilled' || /whisk[e]?y|scotch|bourbon|single malt|tequila|mezcal|\brum\b|cognac|brandy|\bgin\b|vodka/i.test(allText)) {
+    if (ctType === 'Spirits' || ctCategory === 'Distilled' || /whisk[e]?y|scotch|bourbon|single malt|tequila|mezcal|sake|junmai|ginjo|daiginjo|nigori|\brum\b|cognac|brandy|\bgin\b|vodka/i.test(allText)) {
       if (/whisk[e]?y|scotch|single malt|bourbon/i.test(allText)) {
         if (/bourbon/i.test(allText)) type = 'Bourbon';
         else if (/scotch|single malt/i.test(allText) || /scotland|speyside|highland|islay/i.test(allText)) type = 'Scotch';
@@ -2462,6 +2072,11 @@ function parseCSVToBottles(headers, lines) {
         category = 'whiskey';
       } else if (/tequila|agave/i.test(allText)) { type = 'Tequila'; category = 'tequila'; }
       else if (/mezcal/i.test(allText)) { type = 'Mezcal'; category = 'tequila'; }
+      else if (/daiginjo/i.test(allText)) { type = 'Daiginjo'; category = 'sake'; }
+      else if (/ginjo/i.test(allText)) { type = 'Ginjo'; category = 'sake'; }
+      else if (/nigori/i.test(allText)) { type = 'Nigori'; category = 'sake'; }
+      else if (/junmai/i.test(allText)) { type = 'Junmai'; category = 'sake'; }
+      else if (/\bsake\b/i.test(allText)) { type = 'Sake'; category = 'sake'; }
       else if (/\brum\b|\bron\b/i.test(allText)) { type = 'Rum'; category = 'spirit'; }
       else if (/cognac/i.test(allText)) { type = 'Cognac'; category = 'spirit'; }
       else if (/brandy/i.test(allText)) { type = 'Brandy'; category = 'spirit'; }
@@ -2471,7 +2086,8 @@ function parseCSVToBottles(headers, lines) {
     } else if (ctType === 'Red' || ctColor === 'Red') { type = 'Red'; }
     else if (ctType === 'White' || ctColor === 'White') { type = 'White'; }
     else if (/ros[eé]/i.test(ctType + ctColor)) { type = 'Rosé'; }
-    else if (/sparkling|champagne/i.test(ctType + ctColor)) { type = 'Sparkling'; }
+    else if (/champagne/i.test(allText)) { type = 'Champagne'; }
+    else if (/sparkling/i.test(ctType + ctColor)) { type = 'Sparkling'; }
     else if (/dessert|sweet/i.test(ctType + ctCategory)) { type = 'Dessert'; }
     else if (/fortified|port|sherry/i.test(ctType + ctCategory)) { type = 'Fortified'; }
 
