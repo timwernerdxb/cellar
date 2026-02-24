@@ -40,4 +40,4 @@ app.use('/api/settings', require('./routes/settings'));
 // SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () => console.log(`Cellar running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Cellar running on port ${PORT}`));
