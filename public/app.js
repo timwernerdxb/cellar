@@ -671,8 +671,11 @@ cellar.forEach(w => {
   // Re-estimate market values for non-CSV bottles (no ctId = added via scan/manual)
   // CSV bottles keep their CellarTracker values; scan/manual bottles get fresh estimates
   if (!w.ctId) {
+    const oldMv = w.marketValue;
+    w.marketValue = 0; // Clear so estimateMarketValue doesn't short-circuit
     const newVal = estimateMarketValue(w);
-    if (newVal !== w.marketValue) { w.marketValue = newVal; _migrationDirty = true; }
+    w.marketValue = newVal;
+    if (newVal !== oldMv) _migrationDirty = true;
   } else if (!w.marketValue || w.marketValue <= 0) {
     w.marketValue = estimateMarketValue(w);
     _migrationDirty = true;
