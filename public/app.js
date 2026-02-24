@@ -689,6 +689,14 @@ function setAddCategory(cat, btn) {
   document.getElementById('wineGrape').placeholder = l.grapePH;
   document.getElementById('wineRegion').placeholder = l.regionPH;
 
+  // Vintage/Year is required only for wine, optional for whiskey & spirits
+  const vintageInput = document.getElementById('wineVintage');
+  if (cat === 'wine') {
+    vintageInput.required = true;
+  } else {
+    vintageInput.required = false;
+  }
+
   // Auto-set first option of relevant optgroup
   const sel = document.getElementById('wineType');
   if (cat === 'whiskey') sel.value = 'Scotch';
@@ -1397,9 +1405,39 @@ async function openCamera() {
     const preview = document.getElementById('cameraPreview');
     const video = document.getElementById('cameraVideo');
     preview.style.display = 'block';
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
-    video.srcObject = cameraStream;
-  } catch { showToast('Camera not available. Try uploading an image.'); closeCamera(); }
+
+    // Safari-compatible camera constraints — try ideal first, fall back to basic
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+    } catch (e1) {
+      console.warn('[Camera] Ideal constraints failed, trying basic:', e1.message);
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } }
+        });
+      } catch (e2) {
+        console.warn('[Camera] Environment facing failed, trying any camera:', e2.message);
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+    }
+    cameraStream = stream;
+    video.srcObject = stream;
+
+    // Safari requires explicit play() call and needs to wait for video to be ready
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(resolve); // resolve even if play fails (muted should help)
+      };
+      setTimeout(resolve, 3000); // safety timeout
+    });
+  } catch (err) {
+    console.error('[Camera] Failed to open:', err);
+    showToast('Camera not available. Try uploading an image.');
+    closeCamera();
+  }
 }
 
 function closeCamera() {
@@ -1473,34 +1511,42 @@ function startBarcodeScan() {
     return;
   }
 
-  // Fallback: ZXing library (BrowserMultiFormatReader)
-  if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
-    console.log('[Scan] Using ZXing BrowserMultiFormatReader fallback');
-    const codeReader = new ZXing.BrowserMultiFormatReader();
-    window._zxingReader = codeReader;
-    // Use canvas polling — most reliable approach across ZXing UMD versions
-    startZxingCanvasPoll(codeReader, video);
-    return;
+  // Fallback: ZXing library (BrowserMultiFormatReader) — primary path for Safari
+  if (typeof ZXing !== 'undefined') {
+    let codeReader = null;
+    if (ZXing.BrowserMultiFormatReader) {
+      codeReader = new ZXing.BrowserMultiFormatReader();
+    } else if (ZXing.MultiFormatReader) {
+      codeReader = new ZXing.MultiFormatReader();
+    }
+    if (codeReader) {
+      console.log('[Scan] Using ZXing fallback (Safari-compatible)');
+      window._zxingReader = codeReader;
+      startZxingCanvasPoll(codeReader, video);
+      return;
+    }
   }
 
   // No barcode scanning available — let user skip to label
   console.log('[Scan] No barcode API available');
-  setScanStatus('Barcode scanning not available — tap Capture to photograph the label instead');
+  setScanStatus('Barcode scanning not available on this browser — tap Capture to photograph the label instead');
 }
 
 function startZxingCanvasPoll(codeReader, video) {
   console.log('[Scan] Starting ZXing canvas polling');
   const scanCanvas = document.createElement('canvas');
-  const scanCtx = scanCanvas.getContext('2d');
+  const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
   let frameCount = 0;
   barcodeInterval = setInterval(() => {
     if (!cameraStream || scanMode !== 'barcode') { stopBarcodeScan(); return; }
     try {
-      scanCanvas.width = video.videoWidth; scanCanvas.height = video.videoHeight;
-      if (scanCanvas.width === 0) return;
-      scanCtx.drawImage(video, 0, 0);
+      // Safari: video dimensions may be 0 until fully playing
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh || video.readyState < 2) return; // HAVE_CURRENT_DATA or better
+      scanCanvas.width = vw; scanCanvas.height = vh;
+      scanCtx.drawImage(video, 0, 0, vw, vh);
       frameCount++;
-      if (frameCount === 1) console.log('[Scan] ZXing polling active, video:', scanCanvas.width, 'x', scanCanvas.height);
+      if (frameCount === 1) console.log('[Scan] ZXing polling active, video:', vw, 'x', vh);
 
       // ZXing may expose decode as different method names in UMD builds
       let result = null;
@@ -1508,6 +1554,14 @@ function startZxingCanvasPoll(codeReader, video) {
         result = codeReader.decodeFromCanvas(scanCanvas);
       } else if (typeof codeReader.decodeFromImage === 'function') {
         result = codeReader.decodeFromImage(scanCanvas);
+      } else {
+        // Last resort: try creating a luminance source from image data
+        const imageData = scanCtx.getImageData(0, 0, vw, vh);
+        if (typeof ZXing.HTMLCanvasElementLuminanceSource !== 'undefined') {
+          const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(scanCanvas);
+          const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
+          result = codeReader.decode(binaryBitmap);
+        }
       }
       if (result) {
         stopBarcodeScan();
@@ -1520,10 +1574,10 @@ function startZxingCanvasPoll(codeReader, video) {
       // ZXing throws NotFoundException on every frame with no barcode — that's normal
       // Only log unexpected errors
       if (e.name && e.name !== 'NotFoundException' && e.name !== 'ChecksumException' && e.name !== 'FormatException') {
-        console.warn('[Scan] ZXing unexpected error:', e.name, e.message);
+        if (frameCount <= 2) console.warn('[Scan] ZXing unexpected error:', e.name, e.message);
       }
     }
-  }, 500);
+  }, 400); // slightly faster polling for better responsiveness
 }
 
 function stopBarcodeScan() {

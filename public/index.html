@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cellar">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 2C16 2 10 8 10 16C10 19.3 12.7 22 16 22C19.3 22 22 19.3 22 16C22 8 16 2 16 2Z' fill='%238B1A1A'/></svg>">
   <title>Cellar — Wine, Whiskey &amp; Spirits Collection</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -295,7 +299,7 @@
         </div>
         <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
         <div class="camera-preview" id="cameraPreview" style="display:none">
-          <video id="cameraVideo" autoplay playsinline></video>
+          <video id="cameraVideo" autoplay playsinline muted></video>
           <div class="camera-overlay"><div class="camera-frame"></div></div>
           <div class="scan-status-bar" id="scanStatusBar" style="display:none">
             <span id="scanStatusText">Looking for barcode...</span>
@@ -372,6 +376,7 @@
             <div class="form-group">
               <label id="labelVintage">Vintage / Year *</label>
               <input type="number" id="wineVintage" placeholder="2020" min="1900" max="2030" required>
+              <!-- required toggled by setAddCategory(): required for wine, optional for whiskey/spirit -->
             </div>
 
             <div class="form-group">
