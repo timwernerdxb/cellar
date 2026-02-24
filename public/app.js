@@ -663,18 +663,24 @@ let editingBottleId = null;
 // Data starts empty — loaded from server after login
 
 // Ensure category, status, and market values on all bottles
+let _migrationDirty = false;
 cellar.forEach(w => {
-  if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : isSake(w.type) ? 'sake' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine';
-  if (!w.status) w.status = 'active';
-  if (!w.consumptionHistory) w.consumptionHistory = [];
+  if (!w.category) { w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : isSake(w.type) ? 'sake' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine'; _migrationDirty = true; }
+  if (!w.status) { w.status = 'active'; _migrationDirty = true; }
+  if (!w.consumptionHistory) { w.consumptionHistory = []; _migrationDirty = true; }
   // Re-estimate market values for non-CSV bottles (no ctId = added via scan/manual)
   // CSV bottles keep their CellarTracker values; scan/manual bottles get fresh estimates
   if (!w.ctId) {
-    w.marketValue = estimateMarketValue(w);
+    const newVal = estimateMarketValue(w);
+    if (newVal !== w.marketValue) { w.marketValue = newVal; _migrationDirty = true; }
   } else if (!w.marketValue || w.marketValue <= 0) {
     w.marketValue = estimateMarketValue(w);
+    _migrationDirty = true;
   }
+  // Migrate currency to USD
+  if (w.currency === 'EUR') { w.currency = 'USD'; _migrationDirty = true; }
 });
+if (_migrationDirty && cellar.length > 0) saveCellar(cellar);
 
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
@@ -892,7 +898,7 @@ function renderTypeChart() {
   if (typeChartInstance) typeChartInstance.destroy();
   const types = {};
   cellar.filter(w => w.status !== 'consumed').forEach(w => { types[w.type] = (types[w.type] || 0) + (parseInt(w.quantity) || 1); });
-  const sorted = Object.entries(types).sort((a, b) => b[1] - a[1]);
+  let sorted = Object.entries(types).sort((a, b) => b[1] - a[1]);
   const colors = {
     Red: '#8B1A1A', White: '#C9A96E', 'Rosé': '#E8A0BF', Sparkling: '#7FB3D3',
     Champagne: '#D4AF37', Dessert: '#D4A574', Fortified: '#6C3483',
@@ -905,6 +911,24 @@ function renderTypeChart() {
   };
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const mobile = isMobileView();
+
+  // On mobile, group small types into "Other" to keep legend manageable
+  if (mobile && sorted.length > 6) {
+    const top = sorted.slice(0, 5);
+    const rest = sorted.slice(5);
+    const otherTotal = rest.reduce((s, e) => s + e[1], 0);
+    if (otherTotal > 0) top.push(['Other', otherTotal]);
+    sorted = top;
+  }
+
+  // Dynamically size container based on legend items
+  const chartWrap = ctx.closest('.chart-wrap');
+  if (chartWrap && mobile) {
+    chartWrap.style.height = Math.max(260, 160 + sorted.length * 22) + 'px';
+  } else if (chartWrap) {
+    chartWrap.style.height = '';
+  }
+
   typeChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
@@ -918,16 +942,17 @@ function renderTypeChart() {
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: mobile ? '55%' : '62%',
+      responsive: true, maintainAspectRatio: false, cutout: mobile ? '50%' : '62%',
+      layout: { padding: mobile ? { top: 4, bottom: 4 } : {} },
       plugins: {
         legend: {
           position: mobile ? 'bottom' : 'right',
           labels: {
-            padding: mobile ? 8 : 12,
+            padding: mobile ? 6 : 12,
             usePointStyle: true,
             pointStyleWidth: mobile ? 8 : 10,
             color: isDark ? '#A8A4A0' : '#6B6560',
-            font: { family: 'DM Sans', size: mobile ? 10 : 11 }
+            font: { family: 'DM Sans', size: mobile ? 11 : 11 }
           }
         },
         tooltip: {
@@ -1015,29 +1040,40 @@ function renderCategoryChart() {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Sake: '#C45B28', Spirit: '#6C3483' };
   const mobile = isMobileView();
+  const catKeys = Object.keys(cats);
+
+  // Dynamically size container
+  const chartWrap = ctx.closest('.chart-wrap');
+  if (chartWrap && mobile) {
+    chartWrap.style.height = Math.max(240, 160 + catKeys.length * 22) + 'px';
+  } else if (chartWrap) {
+    chartWrap.style.height = '';
+  }
+
   categoryChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
-      labels: Object.keys(cats),
+      labels: catKeys,
       datasets: [{
         data: Object.values(cats),
-        backgroundColor: Object.keys(cats).map(k => catColors[k]),
+        backgroundColor: catKeys.map(k => catColors[k]),
         borderWidth: 2,
         borderColor: isDark ? '#1A1A1E' : '#FFFFFF',
         hoverOffset: 4,
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: mobile ? '55%' : '70%',
+      responsive: true, maintainAspectRatio: false, cutout: mobile ? '45%' : '70%',
+      layout: { padding: mobile ? { top: 4, bottom: 4 } : {} },
       plugins: {
         legend: {
           position: 'bottom',
           labels: {
-            padding: mobile ? 8 : 14,
+            padding: mobile ? 6 : 14,
             usePointStyle: true,
             pointStyleWidth: mobile ? 8 : 10,
             color: isDark ? '#A8A4A0' : '#6B6560',
-            font: { family: 'DM Sans', size: mobile ? 10 : 12 }
+            font: { family: 'DM Sans', size: mobile ? 11 : 12 }
           }
         },
         tooltip: {

@@ -2236,7 +2236,7 @@ body.no-auth .main-content { margin-left: 0; }
     grid-column: 1 / -1;
   }
 
-  /* Charts on mobile — legends move to bottom so need more vertical space */
+  /* Charts on mobile — legends move to bottom, JS sets dynamic heights */
   .charts-row, .charts-row-3 {
     gap: 0.75rem;
     margin-bottom: 1.25rem;
@@ -2252,11 +2252,13 @@ body.no-auth .main-content { margin-left: 0; }
   }
 
   .chart-wrap {
-    height: 220px;
+    height: 280px;
+    min-height: 240px;
   }
 
   .chart-wrap-sm {
-    height: 200px;
+    height: 260px;
+    min-height: 220px;
   }
 
   /* Section cards — tighter */
@@ -2359,18 +2361,20 @@ body.no-auth .main-content { margin-left: 0; }
     display: block;
   }
 
-  /* Charts — keep reasonable height for bottom legends */
+  /* Charts — JS sets dynamic heights, keep generous minimums */
   .charts-row, .charts-row-3 {
     gap: 0.6rem;
     margin-bottom: 1rem;
   }
 
   .chart-wrap {
-    height: 200px;
+    height: 260px;
+    min-height: 220px;
   }
 
   .chart-wrap-sm {
-    height: 180px;
+    height: 240px;
+    min-height: 200px;
   }
 
   .chart-card {
