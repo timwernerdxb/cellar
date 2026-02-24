@@ -1449,15 +1449,20 @@ function closeCamera() {
   stopBarcodeScan();
   clearAutoCapCountdown();
   const video = document.getElementById('cameraVideo');
-  // Stop all tracks from both our reference and the video element
-  const streamsToStop = new Set();
-  if (cameraStream) streamsToStop.add(cameraStream);
-  if (video && video.srcObject) streamsToStop.add(video.srcObject);
-  streamsToStop.forEach(stream => {
-    try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
-  });
-  cameraStream = null;
-  if (video) video.srcObject = null;
+  // Full cleanup of ZXing (reset is ok here since we're closing everything)
+  if (window._zxingReader) {
+    try { window._zxingReader.reset(); } catch(e) {}
+    window._zxingReader = null;
+  }
+  // Stop all camera tracks
+  if (cameraStream) {
+    try { cameraStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+    cameraStream = null;
+  }
+  if (video && video.srcObject) {
+    try { video.srcObject.getTracks().forEach(t => t.stop()); } catch(e) {}
+    video.srcObject = null;
+  }
   document.getElementById('cameraPreview').style.display = 'none';
   const statusBar = document.getElementById('scanStatusBar');
   if (statusBar) statusBar.style.display = 'none';
@@ -1481,22 +1486,23 @@ async function startScanFlow() {
   const preview = document.getElementById('cameraPreview');
   preview.style.display = 'block';
 
-  // For ZXing path: don't open camera ourselves — ZXing manages the camera
-  // For BarcodeDetector path: we need to open camera first
-  if (!('BarcodeDetector' in window) && typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
-    // ZXing will manage camera — just start scanning
-    setScanStatus('Point at the barcode on the back of the bottle...');
-    showToast('Scan the barcode first');
-    startBarcodeScan();
-    // Scroll into view on mobile
-    setTimeout(() => preview.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-  } else {
-    // Native BarcodeDetector — we manage the camera
-    await openCamera();
-    setScanStatus('Point at the barcode on the back of the bottle...');
-    showToast('Scan the barcode first');
-    startBarcodeScan();
-  }
+  // Always open camera ourselves — we manage the stream, barcode libs just decode
+  await openCamera();
+  setScanStatus('Point at the barcode on the back of the bottle...');
+  showToast('Scan the barcode first');
+  startBarcodeScan();
+
+  // Fallback: if no barcode detected within 12 seconds, skip to label capture
+  window._barcodeScanTimeout = setTimeout(() => {
+    if (scanMode === 'barcode') {
+      console.log('[Scan] Barcode timeout — skipping to label capture');
+      stopBarcodeScan();
+      setScanStatus('No barcode found — capture the front label instead', true);
+      showToast('No barcode found. Capture the label instead.');
+      scanMode = 'label';
+      startAutoCapCountdown(5);
+    }
+  }, 12000);
 }
 
 async function startLabelOnly() {
@@ -1538,8 +1544,9 @@ function startBarcodeScan() {
           scanning = false; // prevent duplicate detections
           const code = barcodes[0].rawValue;
           console.log('[Scan] Native BarcodeDetector found:', code);
-          // Stop the interval but keep the camera stream alive
+          // Stop the interval and timeout, but keep the camera stream alive
           if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
+          if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
           setScanStatus(`Barcode found: ${code} — looking up...`, true);
           await lookupBarcodeForFlow(code);
         }
@@ -1566,91 +1573,58 @@ function startBarcodeScan() {
 }
 
 function startZxingVideoScan() {
-  // Stop our own camera stream — ZXing will manage its own
   const video = document.getElementById('cameraVideo');
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(t => t.stop());
-    cameraStream = null;
-    video.srcObject = null;
+
+  // We already have our own camera stream open — feed it to ZXing for decoding
+  if (!cameraStream || !video.srcObject) {
+    console.error('[Scan] ZXing: no camera stream available');
+    setScanStatus('Camera not ready — tap Capture to photograph the label instead');
+    return;
   }
 
   const codeReader = new ZXing.BrowserMultiFormatReader();
   window._zxingReader = codeReader;
 
-  // Use ZXing's built-in continuous decoding — it manages camera + video internally
-  // Pass null as deviceId to let it pick the rear camera automatically
-  console.log('[Scan] Starting ZXing decodeFromVideoDevice...');
-  codeReader.decodeFromVideoDevice(null, 'cameraVideo', (result, err) => {
+  console.log('[Scan] Starting ZXing decodeFromStream (using our camera stream)...');
+
+  // decodeFromStream uses OUR stream — doesn't open its own camera
+  codeReader.decodeFromStream(cameraStream, video, (result, err) => {
     if (result) {
       const code = typeof result.getText === 'function' ? result.getText() : result.text || String(result);
       console.log('[Scan] ZXing barcode found:', code);
 
-      // CRITICAL: Grab the stream BEFORE stopping ZXing — reset() kills the stream
-      const zxingStream = video.srcObject;
-
-      // Stop ZXing's continuous decoding but keep the camera stream alive
-      stopBarcodeScanKeepStream();
-
-      // Re-attach the stream to the video element (reset may have cleared it)
-      if (zxingStream && zxingStream.active) {
-        video.srcObject = zxingStream;
-        cameraStream = zxingStream;
-        console.log('[Scan] Preserved ZXing camera stream for label capture');
-      } else {
-        console.warn('[Scan] ZXing stream was not active, will re-open camera for label');
+      // Stop ZXing decoding but keep our camera stream alive
+      if (window._zxingReader) {
+        try { window._zxingReader.stopContinuousDecode(); } catch(e) {}
+        window._zxingReader = null;
       }
+
+      // Clear the barcode timeout since we found one
+      if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
 
       setScanStatus(`Barcode found: ${code} — looking up...`, true);
       lookupBarcodeForFlow(code);
     }
     if (err && err.name !== 'NotFoundException') {
-      // Only log real errors, not "no barcode found" which fires every frame
-      console.warn('[Scan] ZXing scan error:', err.name, err.message);
+      console.warn('[Scan] ZXing error:', err.name, err.message);
     }
-  }).then(() => {
-    console.log('[Scan] ZXing decoding started successfully');
-    // Update cameraStream reference to ZXing's stream
-    if (video.srcObject) {
-      cameraStream = video.srcObject;
-      console.log('[Scan] ZXing camera stream acquired, tracks:', cameraStream.getTracks().length);
-    }
-  }).catch(err => {
-    console.error('[Scan] ZXing failed to start:', err);
-    // Fall back to our own camera
-    openCamera().then(() => {
-      setScanStatus('Barcode scanning failed — tap Capture to photograph the label instead');
-    });
   });
+  console.log('[Scan] ZXing decodeFromStream started');
 }
 
 function stopBarcodeScan() {
+  // Clear barcode timeout
+  if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
+  // Clear native BarcodeDetector interval
   if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
+  // Stop ZXing decoding (but NOT the camera stream — we own it)
   if (window._zxingReader) {
     try {
-      window._zxingReader.reset();
-      console.log('[Scan] ZXing reader reset (full stop)');
-    } catch (e) {
-      console.warn('[Scan] ZXing reset error:', e.message);
-    }
-    window._zxingReader = null;
-  }
-}
-
-// Stop ZXing decoding WITHOUT killing the camera stream
-// Used when transitioning from barcode → label capture
-function stopBarcodeScanKeepStream() {
-  if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
-  if (window._zxingReader) {
-    try {
-      // Try stopContinuousDecode first (preserves stream)
       if (typeof window._zxingReader.stopContinuousDecode === 'function') {
         window._zxingReader.stopContinuousDecode();
-        console.log('[Scan] ZXing stopped via stopContinuousDecode (stream preserved)');
-      } else {
-        // reset() kills the stream, but we've already saved the stream reference
-        window._zxingReader.reset();
-        console.log('[Scan] ZXing stopped via reset (stream reference saved externally)');
       }
+      // Don't call reset() — it kills the video stream
+      console.log('[Scan] ZXing decoding stopped');
     } catch (e) {
       console.warn('[Scan] ZXing stop error:', e.message);
     }
@@ -1780,9 +1754,12 @@ async function lookupBarcodeForFlow(code) {
 
 async function startAutoCapCountdown(seconds) {
   clearAutoCapCountdown();
+  // Clear barcode scan timeout
+  if (window._barcodeScanTimeout) { clearTimeout(window._barcodeScanTimeout); window._barcodeScanTimeout = null; }
 
   // Ensure camera is active before starting countdown
   const video = document.getElementById('cameraVideo');
+  console.log('[AutoCap] Camera check — srcObject:', !!video.srcObject, 'stream:', !!cameraStream, 'width:', video.videoWidth);
   if (!video.srcObject || !cameraStream || !video.videoWidth) {
     console.log('[AutoCap] Camera not active — re-opening for label capture');
     await openCamera();
@@ -1807,18 +1784,16 @@ async function capturePhoto() {
   const video = document.getElementById('cameraVideo');
   const canvas = document.getElementById('captureCanvas');
 
-  // Stop any active barcode scanning
+  // Stop any active barcode scanning (keeps camera stream alive)
   stopBarcodeScan();
 
   // Check if video is actually showing frames
-  const videoReady = video.srcObject && video.videoWidth > 0 && video.readyState >= 2;
-  console.log('[Capture] Video state — srcObject:', !!video.srcObject, 'width:', video.videoWidth, 'readyState:', video.readyState, 'cameraStream:', !!cameraStream, 'ready:', videoReady);
+  console.log('[Capture] Video state — srcObject:', !!video.srcObject, 'width:', video.videoWidth, 'readyState:', video.readyState, 'cameraStream:', !!cameraStream);
 
-  if (!videoReady) {
-    console.log('[Capture] Video not ready — re-opening camera for label capture');
-    // Need to re-open camera (ZXing reset may have killed it)
+  if (!video.srcObject || !video.videoWidth || video.readyState < 2) {
+    console.log('[Capture] Video not ready — opening camera');
     await openCamera();
-    // Wait for video to start rendering real frames
+    // Wait for real frames
     await new Promise(resolve => {
       let checks = 0;
       const check = setInterval(() => {
@@ -1829,14 +1804,16 @@ async function capturePhoto() {
         }
       }, 150);
     });
-    console.log('[Capture] Camera re-opened, width:', video.videoWidth, 'readyState:', video.readyState);
   }
 
   // Capture the frame
-  canvas.width = video.videoWidth || 1280;
-  canvas.height = video.videoHeight || 720;
-  canvas.getContext('2d').drawImage(video, 0, 0);
+  const w = video.videoWidth || 1280;
+  const h = video.videoHeight || 720;
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(video, 0, 0, w, h);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  console.log('[Capture] Frame captured:', w, 'x', h);
   closeCamera();
 
   if (wasBarcodeMode) {
