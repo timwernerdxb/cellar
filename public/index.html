@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cellar — Wine, Whiskey &amp; Spirits Collection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Sidebar Navigation -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <svg class="brand-icon" viewBox="0 0 32 32" fill="none">
+        <path d="M16 2C16 2 10 8 10 16C10 19.3 12.7 22 16 22C19.3 22 22 19.3 22 16C22 8 16 2 16 2Z" fill="currentColor" opacity="0.2"/>
+        <path d="M16 2C16 2 10 8 10 16C10 19.3 12.7 22 16 22C19.3 22 22 19.3 22 16C22 8 16 2 16 2Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="16" y1="22" x2="16" y2="30" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="12" y1="30" x2="20" y2="30" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-name">Cellar</span>
+    </div>
+
+    <div class="nav-section">
+      <a href="#" class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        Dashboard
+      </a>
+      <a href="#" class="nav-item" data-view="cellar" onclick="switchView('cellar')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18M3 6v12a2 2 0 002 2h14a2 2 0 002-2V6M3 6l3-3h12l3 3M10 11h4"/></svg>
+        My Collection
+      </a>
+      <a href="#" class="nav-item" data-view="add" onclick="switchView('add')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Add Bottle
+      </a>
+      <a href="#" class="nav-item" data-view="tasting" onclick="switchView('tasting')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2h8l-1 9H9L8 2z"/><path d="M9 11h6v1a3 3 0 01-3 3v0a3 3 0 01-3-3v-1z"/><line x1="12" y1="15" x2="12" y2="20"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
+        Tasting Notes
+      </a>
+      <a href="#" class="nav-item" data-view="timeline" onclick="switchView('timeline')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+        Drink Timeline
+      </a>
+    </div>
+
+    <div class="nav-bottom">
+      <a href="#" class="nav-item" data-view="settings" onclick="switchView('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </a>
+      <a href="#" class="nav-item" onclick="toggleTheme()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" id="themeIcon"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        Theme
+      </a>
+
+      <!-- Auth Section -->
+      <div class="nav-auth" id="authSection">
+        <div id="authLogin">
+          <a href="/api/auth/google" class="btn-auth btn-google" id="authGoogleBtn">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Sign in with Google
+          </a>
+          <a href="/api/auth/apple" class="btn-auth btn-apple" id="authAppleBtn" style="display:none">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+            Sign in with Apple
+          </a>
+          <p class="auth-hint">Sign in to sync across devices</p>
+        </div>
+        <div id="authUser" style="display:none">
+          <img id="authAvatar" class="auth-avatar" alt="" style="display:none">
+          <span id="authName" class="auth-name"></span>
+          <div class="auth-actions">
+            <button class="btn-auth-sm" onclick="syncNow()">Sync</button>
+            <button class="btn-auth-sm" onclick="logout()">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Mobile Nav Toggle -->
+  <button class="mobile-nav-toggle" id="mobileToggle" onclick="toggleMobileNav()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+
+  <!-- Main Content Area -->
+  <main class="main-content">
+
+    <!-- ==================== DASHBOARD VIEW ==================== -->
+    <section class="view active" id="view-dashboard">
+      <header class="view-header">
+        <div>
+          <h1 id="dashGreeting">Good evening</h1>
+          <p class="subtitle">Here's your collection at a glance</p>
+        </div>
+      </header>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2C12 2 6 8 6 16a6 6 0 0012 0C18 8 12 2 12 2z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="totalBottles">0</span>
+            <span class="stat-label">Bottles</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon gold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="avgRating">0.0</span>
+            <span class="stat-label">Avg Rating</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="readyToDrink">0</span>
+            <span class="stat-label">Ready to Drink</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M2 10h20"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="totalValue">€0</span>
+            <span class="stat-label">Est. Value</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="charts-row charts-row-3">
+        <div class="chart-card">
+          <h3>Collection by Type</h3>
+          <div class="chart-wrap"><canvas id="typeChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>By Category</h3>
+          <div class="chart-wrap chart-wrap-sm"><canvas id="categoryChart"></canvas></div>
+        </div>
+        <div class="chart-card chart-card-wide">
+          <h3>Top Regions</h3>
+          <div class="chart-wrap"><canvas id="regionChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h3>Most Valuable</h3>
+          <a href="#" class="link-btn" onclick="switchView('cellar')">View all &rarr;</a>
+        </div>
+        <div class="wine-list" id="topValueList"></div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h3>Ready to Drink</h3>
+          <a href="#" class="link-btn" onclick="switchView('timeline')">View timeline &rarr;</a>
+        </div>
+        <div class="wine-list" id="readyWinesList"></div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h3>Recently Added</h3>
+          <a href="#" class="link-btn" onclick="switchView('cellar')">View all &rarr;</a>
+        </div>
+        <div class="wine-list" id="recentWinesList"></div>
+      </div>
+    </section>
+
+    <!-- ==================== CELLAR VIEW ==================== -->
+    <section class="view" id="view-cellar">
+      <header class="view-header">
+        <div>
+          <h1>My Collection</h1>
+          <p class="subtitle" id="cellarCount">0 bottles</p>
+        </div>
+        <div class="header-actions">
+          <div class="search-bar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input type="text" placeholder="Search collection..." id="cellarSearch" oninput="filterCellar()">
+          </div>
+        </div>
+      </header>
+
+      <div class="filter-bar">
+        <button class="filter-chip active" data-filter="all" onclick="setCellarFilter('all', this)">All</button>
+        <span class="filter-divider">|</span>
+        <button class="filter-chip" data-filter="Red" onclick="setCellarFilter('Red', this)">Red</button>
+        <button class="filter-chip" data-filter="White" onclick="setCellarFilter('White', this)">White</button>
+        <button class="filter-chip" data-filter="Rosé" onclick="setCellarFilter('Rosé', this)">Ros&eacute;</button>
+        <button class="filter-chip" data-filter="Sparkling" onclick="setCellarFilter('Sparkling', this)">Sparkling</button>
+        <span class="filter-divider">|</span>
+        <button class="filter-chip" data-filter="Scotch" onclick="setCellarFilter('Scotch', this)">Scotch</button>
+        <button class="filter-chip" data-filter="Bourbon" onclick="setCellarFilter('Bourbon', this)">Bourbon</button>
+        <button class="filter-chip" data-filter="Irish" onclick="setCellarFilter('Irish', this)">Irish</button>
+        <button class="filter-chip" data-filter="Japanese" onclick="setCellarFilter('Japanese', this)">Japanese</button>
+        <button class="filter-chip" data-filter="Rye" onclick="setCellarFilter('Rye', this)">Rye</button>
+        <span class="filter-divider">|</span>
+        <button class="filter-chip" data-filter="Tequila" onclick="setCellarFilter('Tequila', this)">Tequila</button>
+        <button class="filter-chip" data-filter="Mezcal" onclick="setCellarFilter('Mezcal', this)">Mezcal</button>
+        <button class="filter-chip" data-filter="Rum" onclick="setCellarFilter('Rum', this)">Rum</button>
+        <div class="filter-spacer"></div>
+        <select class="sort-select" id="cellarSort" onchange="filterCellar()">
+          <option value="added">Recently Added</option>
+          <option value="name">Name A-Z</option>
+          <option value="vintage">Year (Newest)</option>
+          <option value="rating">Highest Rated</option>
+          <option value="value">Highest Value</option>
+        </select>
+      </div>
+
+      <div class="wine-grid" id="cellarGrid"></div>
+    </section>
+
+    <!-- ==================== ADD BOTTLE VIEW ==================== -->
+    <section class="view" id="view-add">
+      <header class="view-header">
+        <div>
+          <h1>Add Bottle</h1>
+          <p class="subtitle">Scan a label, take a photo, or enter details manually</p>
+        </div>
+      </header>
+
+      <!-- Category selector -->
+      <div class="category-toggle">
+        <button class="cat-btn active" data-cat="wine" onclick="setAddCategory('wine', this)">Wine</button>
+        <button class="cat-btn" data-cat="whiskey" onclick="setAddCategory('whiskey', this)">Whiskey</button>
+        <button class="cat-btn" data-cat="spirit" onclick="setAddCategory('spirit', this)">Spirit</button>
+      </div>
+
+      <!-- Scan / Photo Section -->
+      <div class="scan-section">
+        <div class="scan-options">
+          <div class="scan-option" onclick="startScanFlow()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="2" height="16"/><rect x="6" y="4" width="1" height="16"/><rect x="9" y="4" width="2" height="16"/><rect x="13" y="4" width="1" height="16"/><rect x="16" y="4" width="3" height="16"/><rect x="21" y="4" width="1" height="16"/></svg>
+            </div>
+            <h4>Scan Bottle</h4>
+            <p>Scan barcode, then label — all in one step</p>
+          </div>
+          <div class="scan-option" onclick="startLabelOnly()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </div>
+            <h4>Photo Label</h4>
+            <p>Take a photo of the front label only</p>
+          </div>
+          <div class="scan-option" onclick="document.getElementById('imageUpload').click()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <h4>Upload Image</h4>
+            <p>Select a photo of the label</p>
+          </div>
+        </div>
+        <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+        <div class="camera-preview" id="cameraPreview" style="display:none">
+          <video id="cameraVideo" autoplay playsinline></video>
+          <div class="camera-overlay"><div class="camera-frame"></div></div>
+          <div class="scan-status-bar" id="scanStatusBar" style="display:none">
+            <span id="scanStatusText">Looking for barcode...</span>
+          </div>
+          <div class="camera-controls">
+            <button class="btn btn-secondary" onclick="cancelScanFlow()">Cancel</button>
+            <button class="btn btn-primary" id="captureBtn" onclick="capturePhoto()">Capture</button>
+          </div>
+        </div>
+        <div class="scan-processing" id="scanProcessing" style="display:none">
+          <div class="scan-spinner"></div>
+          <p>Analyzing label...</p>
+        </div>
+        <div class="scan-preview" id="scanPreview" style="display:none">
+          <img id="scannedImage" alt="Scanned label">
+          <div class="scan-result" id="scanResult"></div>
+        </div>
+        <canvas id="captureCanvas" style="display:none"></canvas>
+      </div>
+
+      <div class="form-divider"><span>Bottle Details</span></div>
+
+      <div class="form-container">
+        <form id="addWineForm" onsubmit="addBottle(event)">
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>Name *</label>
+              <input type="text" id="wineName" placeholder="e.g. Chateau Margaux or Macallan 18" required>
+            </div>
+
+            <div class="form-group">
+              <label id="labelProducer">Producer / Winery</label>
+              <input type="text" id="wineProducer" placeholder="e.g. Chateau Margaux">
+            </div>
+
+            <div class="form-group">
+              <label id="labelVintage">Vintage / Year *</label>
+              <input type="number" id="wineVintage" placeholder="2020" min="1900" max="2030" required>
+            </div>
+
+            <div class="form-group">
+              <label>Type *</label>
+              <select id="wineType" required>
+                <!-- Wine types -->
+                <optgroup label="Wine" id="optWine">
+                  <option value="Red">Red Wine</option>
+                  <option value="White">White Wine</option>
+                  <option value="Rosé">Ros&eacute;</option>
+                  <option value="Sparkling">Sparkling</option>
+                  <option value="Dessert">Dessert Wine</option>
+                  <option value="Fortified">Fortified Wine</option>
+                </optgroup>
+                <!-- Whiskey types -->
+                <optgroup label="Whiskey" id="optWhiskey">
+                  <option value="Scotch">Scotch</option>
+                  <option value="Bourbon">Bourbon</option>
+                  <option value="Irish">Irish Whiskey</option>
+                  <option value="Japanese">Japanese Whisky</option>
+                  <option value="Rye">Rye Whiskey</option>
+                  <option value="Single Malt">Single Malt</option>
+                  <option value="Blended">Blended Whisky</option>
+                  <option value="Tennessee">Tennessee Whiskey</option>
+                </optgroup>
+                <!-- Spirit types -->
+                <optgroup label="Spirits" id="optSpirits">
+                  <option value="Tequila">Tequila</option>
+                  <option value="Mezcal">Mezcal</option>
+                  <option value="Rum">Rum</option>
+                  <option value="Cognac">Cognac</option>
+                  <option value="Brandy">Brandy</option>
+                  <option value="Gin">Gin</option>
+                  <option value="Vodka">Vodka</option>
+                  <option value="Other Spirit">Other Spirit</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="form-group" id="grapeGroup">
+              <label id="labelGrape">Grape / Varietal</label>
+              <input type="text" id="wineGrape" placeholder="e.g. Cabernet Sauvignon">
+            </div>
+
+            <div class="form-group">
+              <label>Region / Origin</label>
+              <input type="text" id="wineRegion" placeholder="e.g. Bordeaux, France or Islay, Scotland">
+            </div>
+
+            <!-- Whiskey-specific fields -->
+            <div class="form-group whiskey-field" id="ageField" style="display:none">
+              <label>Age Statement (years)</label>
+              <input type="number" id="whiskeyAge" placeholder="e.g. 12" min="0" max="100">
+            </div>
+
+            <div class="form-group whiskey-field" id="abvField" style="display:none">
+              <label>ABV %</label>
+              <input type="number" id="whiskeyAbv" placeholder="e.g. 43" step="0.1" min="0" max="100">
+            </div>
+
+            <div class="form-group">
+              <label>Quantity</label>
+              <input type="number" id="wineQuantity" value="1" min="1" max="999">
+            </div>
+
+            <div class="form-group">
+              <label>Purchase Price</label>
+              <div class="input-with-prefix">
+                <span class="input-prefix">$</span>
+                <input type="number" id="winePrice" placeholder="0.00" step="0.01" min="0">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Storage Location</label>
+              <input type="text" id="wineLocation" placeholder="e.g. Rack A, Shelf 3">
+            </div>
+
+            <div class="form-group wine-field" id="drinkFromGroup">
+              <label>Drink From (Year)</label>
+              <input type="number" id="wineDrinkFrom" placeholder="2025" min="1900" max="2100">
+            </div>
+
+            <div class="form-group wine-field" id="drinkUntilGroup">
+              <label>Drink Until (Year)</label>
+              <input type="number" id="wineDrinkUntil" placeholder="2035" min="1900" max="2100">
+            </div>
+
+            <div class="form-group full-width">
+              <label>Notes</label>
+              <textarea id="wineNotes" placeholder="Any notes about this bottle..." rows="3"></textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('addWineForm').reset(); if(editingBottleId){editingBottleId=null;updateAddViewTitle(false)}">Clear</button>
+            <button type="submit" class="btn btn-primary">Add to Collection</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- ==================== TASTING NOTES VIEW ==================== -->
+    <section class="view" id="view-tasting">
+      <header class="view-header">
+        <div>
+          <h1>Tasting Notes</h1>
+          <p class="subtitle">Rate and review your bottles</p>
+        </div>
+      </header>
+
+      <div class="tasting-container">
+        <div class="tasting-select-card">
+          <h3>Select a bottle to taste</h3>
+          <div class="search-bar" style="margin-bottom: 1rem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input type="text" placeholder="Search your collection..." id="tastingSearch" oninput="filterTastingWines()">
+          </div>
+          <div class="tasting-wine-list" id="tastingWineList"></div>
+        </div>
+
+        <div class="tasting-form-card" id="tastingFormCard" style="display:none">
+          <div class="tasting-wine-header" id="tastingWineHeader"></div>
+          <form id="tastingForm" onsubmit="saveTasting(event)">
+            <div class="rating-section">
+              <label>Rating</label>
+              <div class="star-rating" id="starRating">
+                <button type="button" class="star" data-value="1">&#9733;</button>
+                <button type="button" class="star" data-value="2">&#9733;</button>
+                <button type="button" class="star" data-value="3">&#9733;</button>
+                <button type="button" class="star" data-value="4">&#9733;</button>
+                <button type="button" class="star" data-value="5">&#9733;</button>
+              </div>
+              <span class="rating-value" id="ratingDisplay">0 / 5</span>
+            </div>
+
+            <div class="flavor-tags">
+              <label>Flavor Profile</label>
+              <div class="tag-grid" id="flavorTags">
+                <!-- Shared -->
+                <button type="button" class="tag" data-tag="Smoky" onclick="toggleTag(this)">Smoky</button>
+                <button type="button" class="tag" data-tag="Oaky" onclick="toggleTag(this)">Oaky</button>
+                <button type="button" class="tag" data-tag="Spicy" onclick="toggleTag(this)">Spicy</button>
+                <button type="button" class="tag" data-tag="Fruity" onclick="toggleTag(this)">Fruity</button>
+                <button type="button" class="tag" data-tag="Earthy" onclick="toggleTag(this)">Earthy</button>
+                <button type="button" class="tag" data-tag="Floral" onclick="toggleTag(this)">Floral</button>
+                <button type="button" class="tag" data-tag="Herbal" onclick="toggleTag(this)">Herbal</button>
+                <button type="button" class="tag" data-tag="Velvety" onclick="toggleTag(this)">Velvety</button>
+                <!-- Wine-specific -->
+                <button type="button" class="tag" data-tag="Tannic" onclick="toggleTag(this)">Tannic</button>
+                <button type="button" class="tag" data-tag="Crisp" onclick="toggleTag(this)">Crisp</button>
+                <button type="button" class="tag" data-tag="Buttery" onclick="toggleTag(this)">Buttery</button>
+                <button type="button" class="tag" data-tag="Mineral" onclick="toggleTag(this)">Mineral</button>
+                <!-- Whiskey-specific -->
+                <button type="button" class="tag" data-tag="Peaty" onclick="toggleTag(this)">Peaty</button>
+                <button type="button" class="tag" data-tag="Vanilla" onclick="toggleTag(this)">Vanilla</button>
+                <button type="button" class="tag" data-tag="Caramel" onclick="toggleTag(this)">Caramel</button>
+                <button type="button" class="tag" data-tag="Honey" onclick="toggleTag(this)">Honey</button>
+                <button type="button" class="tag" data-tag="Nutty" onclick="toggleTag(this)">Nutty</button>
+                <button type="button" class="tag" data-tag="Leather" onclick="toggleTag(this)">Leather</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Tasting Notes</label>
+              <textarea id="tastingNotes" placeholder="Describe the nose, palate, finish..." rows="5"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Date Tasted</label>
+              <input type="date" id="tastingDate" value="">
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" onclick="cancelTasting()">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save Tasting Note</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="section-card" id="pastTastingsCard">
+          <div class="section-header"><h3>Recent Tasting Notes</h3></div>
+          <div class="tasting-notes-list" id="pastTastingsList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== DRINK TIMELINE VIEW ==================== -->
+    <section class="view" id="view-timeline">
+      <header class="view-header">
+        <div>
+          <h1>Drink Timeline</h1>
+          <p class="subtitle">Know when to open each bottle</p>
+        </div>
+      </header>
+
+      <div class="timeline-legend">
+        <span class="legend-item"><span class="legend-dot too-early"></span>Too Early</span>
+        <span class="legend-item"><span class="legend-dot ready"></span>Ready Now</span>
+        <span class="legend-item"><span class="legend-dot peak"></span>At Peak</span>
+        <span class="legend-item"><span class="legend-dot past"></span>Past Peak</span>
+        <span class="legend-item"><span class="legend-dot anytime"></span>Anytime (Spirits)</span>
+      </div>
+
+      <div class="timeline-container" id="timelineContainer"></div>
+    </section>
+
+    <!-- ==================== SETTINGS VIEW ==================== -->
+    <section class="view" id="view-settings">
+      <header class="view-header">
+        <div>
+          <h1>Settings</h1>
+          <p class="subtitle">Configure your Cellar app</p>
+        </div>
+      </header>
+
+      <div class="settings-container">
+        <div class="settings-card">
+          <h3>Vision API (Label Recognition)</h3>
+          <p class="settings-desc">Enter your OpenAI API key to enable AI-powered label recognition. Your key is stored locally in your browser and never sent to any server except OpenAI.</p>
+          <div class="form-group" style="margin-top: 1rem">
+            <label>OpenAI API Key</label>
+            <div class="api-key-input-wrap">
+              <input type="password" id="apiKeyInput" placeholder="sk-proj-..." autocomplete="off">
+              <button type="button" class="btn btn-sm btn-secondary" onclick="toggleApiKeyVisibility()">Show</button>
+            </div>
+          </div>
+          <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.5rem">
+            <span class="api-key-status" id="apiKeyStatus"></span>
+            <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Save Key</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>Data Management</h3>
+          <p class="settings-desc">Export or clear your collection data.</p>
+          <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.5rem;justify-content:flex-start">
+            <button class="btn btn-secondary btn-sm" onclick="exportData()">Export Collection (JSON)</button>
+            <button class="btn btn-danger btn-sm" onclick="clearAllData()">Reset All Data</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== DETAIL MODAL ==================== -->
+    <div class="modal-overlay" id="wineModal" onclick="closeModal(event)">
+      <div class="modal-content" onclick="event.stopPropagation()">
+        <button class="modal-close" onclick="closeWineModal()">&times;</button>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <!-- Sync Prompt Modal -->
+    <div class="modal-overlay" id="syncModal" onclick="skipSync()">
+      <div class="modal-content modal-sm" onclick="event.stopPropagation()">
+        <div style="text-align:center;padding:1.5rem">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--accent)" stroke-width="1.5" style="margin-bottom:1rem"><path d="M21 12a9 9 0 11-6.22-8.56"/><polyline points="21 3 21 9 15 9"/></svg>
+          <h3 style="margin-bottom:0.5rem">Sync your collection?</h3>
+          <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1.5rem">You have <strong id="syncCount">0</strong> bottles in local storage. Upload them to your cloud account?</p>
+          <div style="display:flex;gap:0.75rem;justify-content:center">
+            <button class="btn btn-secondary" onclick="skipSync()">Not now</button>
+            <button class="btn btn-primary" onclick="confirmSync()">Upload to cloud</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" onerror="console.log('ZXing fallback not loaded')"></script>
+  <script src="app.js"></script>
+</body>
+</html>

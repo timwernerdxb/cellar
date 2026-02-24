@@ -1,0 +1,1788 @@
+/* ============================================
+   VINO — Modern Wine Cellar App
+   ============================================ */
+
+:root {
+  /* Core palette */
+  --wine-red: #8B1A1A;
+  --wine-dark: #5C1010;
+  --wine-light: #D4A5A5;
+  --gold: #C9A96E;
+  --gold-light: #E8D5A3;
+
+  /* Neutrals */
+  --bg: #F8F6F3;
+  --bg-card: #FFFFFF;
+  --bg-sidebar: #1A1A1E;
+  --bg-hover: #F0EDE8;
+  --border: #E8E4DE;
+  --text: #1A1A1E;
+  --text-secondary: #6B6560;
+  --text-muted: #9B9590;
+  --text-sidebar: #A8A4A0;
+  --text-sidebar-active: #FFFFFF;
+
+  /* Accents */
+  --accent: #8B1A1A;
+  --accent-hover: #6D1414;
+  --success: #2D7A4F;
+  --warning: #C9A96E;
+  --danger: #C0392B;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04);
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --bg: #0F0F12;
+  --bg-card: #1A1A1E;
+  --bg-hover: #25252A;
+  --border: #2A2A30;
+  --text: #E8E4DE;
+  --text-secondary: #9B9590;
+  --text-muted: #6B6560;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.4);
+}
+
+/* ============================================
+   RESET & BASE
+   ============================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 15px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background 0.3s, color 0.3s;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* ============================================
+   SIDEBAR
+   ============================================ */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 0;
+  z-index: 100;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--wine-red);
+}
+
+.brand-name {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.nav-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 0.75rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-sidebar);
+  font-size: 0.9rem;
+  font-weight: 400;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.nav-item svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  stroke-width: 1.5;
+}
+
+.nav-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+}
+
+.nav-item.active {
+  background: rgba(139, 26, 26, 0.25);
+  color: var(--text-sidebar-active);
+  font-weight: 500;
+}
+
+.nav-bottom {
+  padding: 0 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* Mobile toggle */
+.mobile-nav-toggle {
+  display: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 200;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-nav-toggle svg {
+  width: 20px;
+  height: 20px;
+  color: var(--text);
+}
+
+/* ============================================
+   MAIN CONTENT
+   ============================================ */
+.main-content {
+  margin-left: var(--sidebar-width);
+  flex: 1;
+  min-height: 100vh;
+  padding: 2rem 2.5rem;
+  max-width: 1200px;
+}
+
+.view {
+  display: none;
+}
+.view.active {
+  display: block;
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   VIEW HEADERS
+   ============================================ */
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.view-header h1 {
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  margin-top: 0.3rem;
+  font-size: 0.93rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* ============================================
+   STATS GRID (Dashboard)
+   ============================================ */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.stat-icon.red { background: rgba(139,26,26,0.1); color: var(--wine-red); }
+.stat-icon.gold { background: rgba(201,169,110,0.15); color: var(--gold); }
+.stat-icon.green { background: rgba(45,122,79,0.1); color: var(--success); }
+.stat-icon.purple { background: rgba(108,52,131,0.1); color: #6C3483; }
+
+.stat-value {
+  display: block;
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* ============================================
+   CHARTS
+   ============================================ */
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.charts-row-3 {
+  grid-template-columns: 1.2fr 0.8fr;
+}
+
+.chart-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.chart-card-wide {
+  grid-column: 1 / -1;
+}
+
+.chart-card h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+}
+
+.chart-wrap {
+  position: relative;
+  height: 220px;
+  width: 100%;
+}
+
+.chart-wrap canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.chart-wrap-sm {
+  height: 180px;
+}
+
+.wine-value-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--success);
+  white-space: nowrap;
+}
+
+/* ============================================
+   SECTION CARDS
+   ============================================ */
+.section-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.section-header h3 {
+  font-size: 1.05rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+}
+
+.link-btn {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+.link-btn:hover { text-decoration: underline; }
+
+/* ============================================
+   WINE LIST (horizontal cards for dashboard)
+   ============================================ */
+.wine-list {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+}
+
+.wine-list::-webkit-scrollbar { height: 4px; }
+.wine-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.wine-card-sm {
+  min-width: 220px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  scroll-snap-align: start;
+  border: 1px solid transparent;
+}
+
+.wine-card-sm:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border);
+}
+
+.wine-card-sm .wine-type-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 0.4rem;
+}
+
+.wine-card-sm .wine-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.2rem;
+  display: flex;
+  align-items: center;
+}
+
+.wine-card-sm .wine-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.wine-card-sm .wine-status {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 99px;
+  margin-top: 0.5rem;
+}
+
+.status-ready { background: rgba(45,122,79,0.12); color: var(--success); }
+.status-early { background: rgba(201,169,110,0.15); color: #A07D3A; }
+.status-peak { background: rgba(139,26,26,0.12); color: var(--wine-red); }
+.status-past { background: rgba(107,101,96,0.12); color: var(--text-muted); }
+
+/* ============================================
+   SEARCH BAR
+   ============================================ */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  width: 280px;
+  transition: border-color 0.15s;
+}
+
+.search-bar:focus-within {
+  border-color: var(--accent);
+}
+
+.search-bar svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.search-bar input {
+  border: none;
+  background: none;
+  outline: none;
+  width: 100%;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.search-bar input::placeholder { color: var(--text-muted); }
+
+/* ============================================
+   FILTER BAR
+   ============================================ */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 0.4rem 0.9rem;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filter-chip:hover { border-color: var(--accent); color: var(--accent); }
+.filter-chip.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.filter-spacer { flex: 1; }
+
+.sort-select {
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+}
+
+/* ============================================
+   WINE GRID (Cellar)
+   ============================================ */
+.wine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.wine-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.wine-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent);
+}
+
+.wine-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.wine-color-bar {
+  width: 4px;
+  height: 48px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.wine-card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.wine-card-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.wine-card-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.wine-detail-chip {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.wine-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.wine-price {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.wine-rating-sm {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--gold);
+}
+
+.wine-qty {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: var(--bg-hover);
+  border-radius: 99px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ============================================
+   ADD WINE FORM
+   ============================================ */
+.form-container {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 2rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  max-width: 800px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-group.full-width { grid-column: 1 / -1; }
+
+.form-group label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: var(--accent);
+}
+
+.form-group textarea { resize: vertical; }
+
+.input-with-prefix {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.input-with-prefix:focus-within { border-color: var(--accent); }
+
+.input-prefix {
+  padding: 0.6rem 0.5rem 0.6rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.input-with-prefix input {
+  border: none !important;
+  background: none !important;
+  padding-left: 0 !important;
+  flex: 1;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+.btn {
+  padding: 0.6rem 1.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+
+.btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
+
+.btn-danger {
+  background: rgba(192,57,43,0.1);
+  color: var(--danger);
+  border: 1px solid transparent;
+}
+.btn-danger:hover { background: rgba(192,57,43,0.18); }
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+/* ============================================
+   TASTING NOTES
+   ============================================ */
+.tasting-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tasting-select-card,
+.tasting-form-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.tasting-wine-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tasting-wine-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.5rem;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.tasting-wine-item:hover { background: var(--bg-hover); }
+
+.tasting-wine-item .wine-type-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tasting-wine-item .name { font-weight: 500; font-size: 0.9rem; }
+.tasting-wine-item .meta { font-size: 0.8rem; color: var(--text-muted); }
+
+/* Tasting form header */
+.tasting-wine-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tasting-wine-header h3 { font-size: 1.15rem; }
+.tasting-wine-header p { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.25rem; }
+
+/* Star rating */
+.rating-section {
+  margin-bottom: 1.5rem;
+}
+
+.rating-section label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.star-rating {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.star-rating .star {
+  font-size: 2rem;
+  background: none;
+  border: none;
+  color: var(--border);
+  cursor: pointer;
+  transition: color 0.1s, transform 0.1s;
+  padding: 0;
+  line-height: 1;
+}
+
+.star-rating .star:hover,
+.star-rating .star.active {
+  color: var(--gold);
+  transform: scale(1.1);
+}
+
+.rating-value {
+  display: inline-block;
+  margin-left: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  vertical-align: super;
+}
+
+/* Flavor tags */
+.flavor-tags {
+  margin-bottom: 1.5rem;
+}
+
+.flavor-tags label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tag {
+  padding: 0.35rem 0.75rem;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tag:hover { border-color: var(--accent); color: var(--accent); }
+.tag.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Past tasting notes */
+.tasting-note-card {
+  padding: 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  margin-bottom: 0.75rem;
+}
+
+.tasting-note-card:last-child { margin-bottom: 0; }
+
+.tasting-note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.tasting-note-header .name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.tasting-note-header .date {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.tasting-note-rating {
+  color: var(--gold);
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.tasting-note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.tasting-note-tags .tag {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  pointer-events: none;
+  background: rgba(139,26,26,0.08);
+  border-color: rgba(139,26,26,0.15);
+  color: var(--wine-red);
+}
+
+.tasting-note-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ============================================
+   DRINK TIMELINE
+   ============================================ */
+.timeline-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.legend-dot.too-early { background: var(--border); }
+.legend-dot.ready { background: var(--success); }
+.legend-dot.peak { background: var(--wine-red); }
+.legend-dot.past { background: var(--text-muted); }
+
+.timeline-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.timeline-item {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.timeline-item:hover {
+  transform: translateX(4px);
+  box-shadow: var(--shadow-md);
+}
+
+.timeline-status-indicator {
+  width: 6px;
+  min-height: 40px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.timeline-status-indicator.too-early { background: var(--border); }
+.timeline-status-indicator.ready { background: var(--success); }
+.timeline-status-indicator.peak { background: var(--wine-red); }
+.timeline-status-indicator.past { background: var(--text-muted); }
+
+.timeline-info { flex: 1; }
+
+.timeline-info .name {
+  font-weight: 600;
+  font-size: 0.93rem;
+}
+
+.timeline-info .meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.timeline-window {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.timeline-window .years {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.timeline-window .label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.timeline-bar-container {
+  flex: 1;
+  max-width: 200px;
+}
+
+.timeline-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.timeline-bar-fill {
+  position: absolute;
+  height: 100%;
+  border-radius: 3px;
+  top: 0;
+}
+
+.timeline-bar-now {
+  position: absolute;
+  width: 2px;
+  height: 14px;
+  top: -4px;
+  background: var(--text);
+  border-radius: 1px;
+}
+
+/* ============================================
+   MODAL
+   ============================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.modal-overlay.open {
+  display: flex;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 2rem;
+  max-width: 600px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--bg-hover);
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s;
+}
+
+.modal-close:hover { background: var(--border); }
+
+/* Modal wine detail */
+.modal-wine-title {
+  font-size: 1.4rem;
+  margin-bottom: 0.25rem;
+  padding-right: 2rem;
+}
+
+.modal-wine-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.modal-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.modal-detail-item label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.modal-detail-item .value {
+  font-size: 0.93rem;
+  font-weight: 500;
+  margin-top: 0.2rem;
+}
+
+.modal-notes {
+  padding: 1rem;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ============================================
+   TOAST
+   ============================================ */
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: var(--bg-sidebar);
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  box-shadow: var(--shadow-lg);
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 2000;
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* ============================================
+   EMPTY STATE
+   ============================================ */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+
+.empty-state svg {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 1rem;
+  opacity: 0.4;
+}
+
+.empty-state h3 {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+  color: var(--text-secondary);
+}
+
+.empty-state p {
+  font-size: 0.85rem;
+}
+
+/* ============================================
+   SCAN SECTION
+   ============================================ */
+.scan-section {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
+}
+
+.scan-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.scan-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 2px dashed var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scan-option:hover {
+  border-color: var(--accent);
+  background: rgba(139, 26, 26, 0.03);
+  transform: translateY(-2px);
+}
+
+.scan-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(139, 26, 26, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+}
+
+.scan-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.scan-option h4 {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.scan-option p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Camera preview */
+.camera-preview {
+  margin-top: 1.5rem;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  position: relative;
+  background: #000;
+}
+
+.camera-preview video {
+  width: 100%;
+  max-height: 400px;
+  object-fit: cover;
+  display: block;
+}
+
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.camera-frame {
+  width: 70%;
+  height: 60%;
+  border: 2px solid rgba(255,255,255,0.5);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.3);
+}
+
+.camera-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+}
+
+.scan-status-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 1rem;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  z-index: 5;
+  backdrop-filter: blur(4px);
+}
+.scan-status-bar.success {
+  background: rgba(34,139,34,0.85);
+}
+.scan-status-bar .scan-countdown {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-weight: 700;
+  color: var(--gold, #f5c842);
+}
+
+/* Processing */
+.scan-processing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem;
+  gap: 1rem;
+}
+
+.scan-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.scan-processing p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Scan preview */
+.scan-preview {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.scan-preview img {
+  width: 160px;
+  height: 200px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.scan-result {
+  flex: 1;
+}
+
+.scan-result h4 {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--success);
+}
+
+.scan-result p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.scan-result .extracted-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.scan-result .extracted-field {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  background: rgba(45, 122, 79, 0.1);
+  color: var(--success);
+}
+
+/* Form divider */
+.form-divider {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.form-divider span {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg);
+  padding-right: 1rem;
+}
+
+.form-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Category toggle */
+.category-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  width: fit-content;
+}
+
+.cat-btn {
+  padding: 0.55rem 1.5rem;
+  border: none;
+  background: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cat-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cat-btn:hover:not(.active) {
+  background: var(--bg-hover);
+}
+
+/* Filter divider */
+.filter-divider {
+  color: var(--border);
+  font-size: 0.9rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* Type colors — Wine */
+.type-Red { background: #8B1A1A; }
+.type-White { background: #C9A96E; }
+.type-Rosé { background: #E8A0BF; }
+.type-Sparkling { background: #7FB3D3; }
+.type-Dessert { background: #D4A574; }
+.type-Fortified { background: #6C3483; }
+
+/* Type colors — Whiskey */
+.type-Scotch { background: #B8860B; }
+.type-Bourbon { background: #D2691E; }
+.type-Irish { background: #228B22; }
+.type-Japanese { background: #C41E3A; }
+.type-Rye { background: #8B4513; }
+.type-Single\.Malt, .type-SingleMalt { background: #DAA520; }
+.type-Blended { background: #A0522D; }
+.type-Tennessee { background: #CD853F; }
+
+/* Type colors — Spirits */
+.type-Tequila { background: #2E86AB; }
+.type-Mezcal { background: #567D2E; }
+.type-Rum { background: #8B4513; }
+.type-Cognac { background: #7B3F00; }
+.type-Brandy { background: #A0522D; }
+.type-Gin { background: #4682B4; }
+.type-Vodka { background: #B0C4DE; }
+.type-Other\.Spirit, .type-OtherSpirit { background: #808080; }
+
+/* Anytime legend dot */
+.legend-dot.anytime { background: var(--gold); }
+
+/* ============================================
+   SETTINGS
+   ============================================ */
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 700px;
+}
+
+.settings-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-card h3 {
+  font-size: 1.05rem;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.settings-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.api-key-input-wrap {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.api-key-input-wrap input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.api-key-input-wrap input:focus {
+  border-color: var(--accent);
+}
+
+.api-key-status {
+  font-size: 0.82rem;
+  flex: 1;
+}
+
+.api-key-status.saved {
+  color: var(--success);
+}
+
+.api-key-status.missing {
+  color: var(--text-muted);
+}
+
+/* ============================================
+   AUTH UI
+   ============================================ */
+.nav-auth {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+.btn-auth {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.btn-google {
+  background: var(--bg);
+  color: var(--text);
+}
+.btn-google:hover { background: var(--bg-hover); }
+
+.btn-apple {
+  background: #000;
+  color: #fff;
+  border-color: #333;
+}
+.btn-apple:hover { background: #222; }
+
+.auth-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+#authUser {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.auth-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.auth-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text);
+  text-align: center;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.btn-auth-sm {
+  font-size: 0.72rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-auth-sm:hover { background: var(--bg-hover); }
+
+.modal-sm {
+  max-width: 400px;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 1024px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .charts-row,
+  .charts-row-3 {
+    grid-template-columns: 1fr;
+  }
+  .chart-card-wide {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .mobile-nav-toggle {
+    display: flex;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1.25rem;
+    padding-top: 4rem;
+  }
+
+  .view-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .wine-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-group.full-width { grid-column: 1; }
+
+  .search-bar { width: 100%; }
+
+  .header-actions { width: 100%; }
+
+  .filter-bar { overflow-x: auto; flex-wrap: nowrap; }
+
+  .scan-options { grid-template-columns: 1fr; }
+  .scan-preview { flex-direction: column; }
+  .scan-preview img { width: 100%; height: 180px; }
+
+  .modal-content { margin: 1rem; padding: 1.5rem; }
+
+  .timeline-item { flex-wrap: wrap; }
+
+  .timeline-bar-container { max-width: 100%; order: 4; width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
