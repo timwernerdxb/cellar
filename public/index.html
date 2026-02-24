@@ -249,29 +249,62 @@
         <button class="status-filter-btn" data-status="all" onclick="setCellarStatusFilter('all', this)">All</button>
       </div>
       <div class="filter-bar">
-        <button class="filter-chip active" data-filter="all" onclick="setCellarFilter('all', this)">All</button>
-        <span class="filter-divider">|</span>
-        <button class="filter-chip" data-filter="Red" onclick="setCellarFilter('Red', this)">Red</button>
-        <button class="filter-chip" data-filter="White" onclick="setCellarFilter('White', this)">White</button>
-        <button class="filter-chip" data-filter="Rosé" onclick="setCellarFilter('Rosé', this)">Ros&eacute;</button>
-        <button class="filter-chip" data-filter="Sparkling" onclick="setCellarFilter('Sparkling', this)">Sparkling</button>
-        <button class="filter-chip" data-filter="Champagne" onclick="setCellarFilter('Champagne', this)">Champagne</button>
-        <span class="filter-divider">|</span>
-        <button class="filter-chip" data-filter="Scotch" onclick="setCellarFilter('Scotch', this)">Scotch</button>
-        <button class="filter-chip" data-filter="Bourbon" onclick="setCellarFilter('Bourbon', this)">Bourbon</button>
-        <button class="filter-chip" data-filter="Irish" onclick="setCellarFilter('Irish', this)">Irish</button>
-        <button class="filter-chip" data-filter="Japanese" onclick="setCellarFilter('Japanese', this)">Japanese</button>
-        <button class="filter-chip" data-filter="Rye" onclick="setCellarFilter('Rye', this)">Rye</button>
-        <span class="filter-divider">|</span>
-        <button class="filter-chip" data-filter="Tequila" onclick="setCellarFilter('Tequila', this)">Tequila</button>
-        <button class="filter-chip" data-filter="Mezcal" onclick="setCellarFilter('Mezcal', this)">Mezcal</button>
-        <span class="filter-divider">|</span>
-        <button class="filter-chip" data-filter="Junmai" onclick="setCellarFilter('Junmai', this)">Junmai</button>
-        <button class="filter-chip" data-filter="Daiginjo" onclick="setCellarFilter('Daiginjo', this)">Daiginjo</button>
-        <button class="filter-chip" data-filter="Nigori" onclick="setCellarFilter('Nigori', this)">Nigori</button>
-        <span class="filter-divider">|</span>
-        <button class="filter-chip" data-filter="Rum" onclick="setCellarFilter('Rum', this)">Rum</button>
-        <div class="filter-spacer"></div>
+        <div class="filter-dropdown" id="filterDropdown">
+          <button class="filter-dropdown-btn" onclick="toggleFilterDropdown()">
+            <span id="filterBtnText">All Types</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5l3 3 3-3"/></svg>
+          </button>
+          <div class="filter-dropdown-panel" id="filterPanel">
+            <div class="filter-panel-header">
+              <span class="filter-panel-title">Filter by Type</span>
+              <button class="filter-clear-btn" onclick="clearTypeFilters()">Clear</button>
+            </div>
+            <div class="filter-group">
+              <div class="filter-group-label">Wine</div>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Red')"> Red</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('White')"> White</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Ros\u00e9')"> Ros&eacute;</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Sparkling')"> Sparkling</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Champagne')"> Champagne</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Dessert')"> Dessert</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Fortified')"> Fortified</label>
+            </div>
+            <div class="filter-group">
+              <div class="filter-group-label">Whiskey</div>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Scotch')"> Scotch</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Bourbon')"> Bourbon</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Irish')"> Irish</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Japanese')"> Japanese</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Rye')"> Rye</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Single Malt')"> Single Malt</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Blended')"> Blended</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Tennessee')"> Tennessee</label>
+            </div>
+            <div class="filter-group">
+              <div class="filter-group-label">Tequila</div>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Tequila')"> Tequila</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Mezcal')"> Mezcal</label>
+            </div>
+            <div class="filter-group">
+              <div class="filter-group-label">Sake</div>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Junmai')"> Junmai</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Ginjo')"> Ginjo</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Daiginjo')"> Daiginjo</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Nigori')"> Nigori</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Sparkling Sake')"> Sparkling Sake</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Sake')"> Sake (Other)</label>
+            </div>
+            <div class="filter-group">
+              <div class="filter-group-label">Spirits</div>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Rum')"> Rum</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Cognac')"> Cognac</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Brandy')"> Brandy</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Gin')"> Gin</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Vodka')"> Vodka</label>
+              <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Other Spirit')"> Other</label>
+            </div>
+          </div>
+        </div>
         <select class="sort-select" id="cellarSort" onchange="filterCellar()">
           <option value="added">Recently Added</option>
           <option value="name">Name A-Z</option>

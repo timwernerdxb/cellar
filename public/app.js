@@ -640,7 +640,7 @@ const CELLARTRACKER_CSV = `"iWine","Type","Color","Category","Size","Currency","
 
 let cellar = loadCellar();
 let tastings = loadTastings();
-let currentFilter = 'all';
+let activeFilters = new Set();
 let cellarStatusFilter = 'active'; // 'active' | 'consumed' | 'all'
 let selectedTastingWineId = null;
 let currentRating = 0;
@@ -1005,7 +1005,7 @@ function renderCellar() {
   if (cellarStatusFilter === 'active') wines = wines.filter(w => w.status !== 'consumed');
   else if (cellarStatusFilter === 'consumed') wines = wines.filter(w => w.status === 'consumed');
 
-  if (currentFilter !== 'all') wines = wines.filter(w => w.type === currentFilter);
+  if (activeFilters.size > 0) wines = wines.filter(w => activeFilters.has(w.type));
   if (search) {
     wines = wines.filter(w =>
       (w.name || '').toLowerCase().includes(search) || (w.producer || '').toLowerCase().includes(search) ||
@@ -1051,13 +1051,10 @@ function renderCellar() {
       ? `<span class="wine-detail-chip">${escHTML(w.type)}</span>${w.abv ? `<span class="wine-detail-chip">${w.abv}% ABV</span>` : ''}${w.size && w.size !== '750ml' ? `<span class="wine-detail-chip">${w.size}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`
       : `<span class="wine-detail-chip">${escHTML(w.type)}</span>${w.grape ? `<span class="wine-detail-chip">${escHTML(w.grape)}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`;
 
-    const imgSrc = w.imageUrl ? (w.imageUrl.startsWith('data:') || w.imageUrl.startsWith('/') ? w.imageUrl : `/api/images/proxy?url=${encodeURIComponent(w.imageUrl)}`) : '';
-
     const isConsumed = w.status === 'consumed';
 
     return `
       <div class="wine-card${isConsumed ? ' consumed' : ''}" onclick="openWineModal('${w.id}')">
-        ${imgSrc ? `<img class="wine-card-image" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         ${isConsumed ? `<span class="wine-qty consumed-badge">Consumed</span>` : w.quantity > 1 ? `<span class="wine-qty">${w.quantity} bottles</span>` : ''}
         <div class="wine-card-top">
           <div class="wine-color-bar type-${typeClass}"></div>
@@ -1080,12 +1077,49 @@ function renderCellar() {
   }).join('');
 }
 
-function setCellarFilter(filter, btn) {
-  currentFilter = filter;
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
+function toggleTypeFilter(type) {
+  if (activeFilters.has(type)) activeFilters.delete(type);
+  else activeFilters.add(type);
+  updateFilterCheckboxes();
+  updateFilterButtonText();
   renderCellar();
 }
+
+function clearTypeFilters() {
+  activeFilters.clear();
+  updateFilterCheckboxes();
+  updateFilterButtonText();
+  renderCellar();
+}
+
+function updateFilterCheckboxes() {
+  document.querySelectorAll('#filterPanel .filter-check-item input').forEach(cb => {
+    const label = cb.parentElement.textContent.trim();
+    // Match checkbox to type by finding the onchange attribute
+    const match = cb.getAttribute('onchange')?.match(/toggleTypeFilter\('(.+?)'\)/);
+    if (match) cb.checked = activeFilters.has(match[1]);
+  });
+}
+
+function updateFilterButtonText() {
+  const btn = document.getElementById('filterBtnText');
+  if (activeFilters.size === 0) btn.textContent = 'All Types';
+  else if (activeFilters.size <= 2) btn.textContent = [...activeFilters].join(', ');
+  else btn.textContent = activeFilters.size + ' types selected';
+}
+
+function toggleFilterDropdown() {
+  const panel = document.getElementById('filterPanel');
+  panel.classList.toggle('open');
+}
+
+// Close filter dropdown on click outside
+document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('filterDropdown');
+  if (dropdown && !dropdown.contains(e.target)) {
+    document.getElementById('filterPanel')?.classList.remove('open');
+  }
+});
 function setCellarStatusFilter(status, btn) {
   cellarStatusFilter = status;
   document.querySelectorAll('.status-filter-btn').forEach(b => b.classList.remove('active'));
@@ -1627,24 +1661,29 @@ async function processLabelImage(dataUrl) {
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: `Analyze this bottle label image and extract all information. Return ONLY valid JSON with these fields (use null for unknown):
+            { type: 'text', text: `Analyze this bottle label image. Extract all visible information AND use your knowledge of this specific product to fill in details not shown on the label. Return ONLY valid JSON:
 {
   "name": "full product name",
-  "producer": "producer/brand/distillery/winery",
+  "producer": "producer/brand/distillery/winery/brewery",
   "vintage": year as number or null,
-  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Other Spirit",
+  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Vodka","Other Spirit",
   "category": "wine" or "whiskey" or "tequila" or "sake" or "spirit",
-  "grape": "grape varietal" or null,
+  "grape": "grape varietal, or rice type for sake (e.g. Yamada Nishiki), or grain/base ingredient for spirits" or null,
   "region": "region, country",
   "age": age statement as number or null,
   "abv": ABV percentage as number or null,
   "designation": "special designation/edition" or null,
-  "size": "bottle size" or "750ml"
-}` },
+  "size": "bottle size" or "750ml",
+  "price": estimated retail price in USD as number or null,
+  "drinkFrom": earliest recommended drinking year or null,
+  "drinkUntil": latest recommended drinking year or null,
+  "notes": "brief tasting profile/description (2-3 sentences from your knowledge)" or null
+}
+Use your knowledge to estimate price, drinking window, grape/rice variety, tasting notes, and any other fields not visible on the label.` },
             { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }
           ]
         }],
-        max_tokens: 500,
+        max_tokens: 700,
         temperature: 0.1,
       })
     });
@@ -1663,13 +1702,14 @@ async function processLabelImage(dataUrl) {
 
     const extracted = JSON.parse(jsonMatch[0]);
 
-    // Add computed fields
-    if (extracted.category !== 'wine' && extracted.vintage) {
-      extracted.drinkFrom = null;
-      extracted.drinkUntil = null;
-    } else if (extracted.vintage) {
+    // Fill in drink window if GPT-4o didn't provide one (wines only)
+    if (extracted.category === 'wine' && extracted.vintage && !extracted.drinkFrom) {
       extracted.drinkFrom = extracted.vintage + 2;
       extracted.drinkUntil = extracted.vintage + (extracted.type === 'Red' ? 15 : extracted.type === 'White' ? 5 : 10);
+    }
+    if (extracted.category !== 'wine') {
+      extracted.drinkFrom = null;
+      extracted.drinkUntil = null;
     }
 
     hideProcessing();
@@ -1744,6 +1784,7 @@ function populateFormFromScan(data) {
   if (data.drinkUntil) document.getElementById('wineDrinkUntil').value = data.drinkUntil;
   if (data.age) document.getElementById('whiskeyAge').value = data.age;
   if (data.abv) document.getElementById('whiskeyAbv').value = data.abv;
+  if (data.notes) document.getElementById('wineNotes').value = data.notes;
 
   document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
