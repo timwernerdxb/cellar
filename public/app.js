@@ -639,6 +639,7 @@ const CELLARTRACKER_CSV = `"iWine","Type","Color","Category","Size","Currency","
 let cellar = loadCellar();
 let tastings = loadTastings();
 let currentFilter = 'all';
+let cellarStatusFilter = 'active'; // 'active' | 'consumed' | 'all'
 let selectedTastingWineId = null;
 let currentRating = 0;
 let addCategory = 'wine';
@@ -646,9 +647,11 @@ let editingBottleId = null;
 
 // Data starts empty — loaded from server after login
 
-// Ensure category field and market values
+// Ensure category, status, and market values on all bottles
 cellar.forEach(w => {
   if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine';
+  if (!w.status) w.status = 'active';
+  if (!w.consumptionHistory) w.consumptionHistory = [];
   if (!w.marketValue || w.marketValue <= 0) w.marketValue = estimateMarketValue(w);
 });
 
@@ -736,17 +739,19 @@ let typeChartInstance = null;
 let regionChartInstance = null;
 
 function renderDashboard() {
-  const totalBottles = cellar.reduce((s, w) => s + (parseInt(w.quantity) || 0), 0);
+  const activeCellar = cellar.filter(w => w.status !== 'consumed');
+  const totalBottles = activeCellar.reduce((s, w) => s + (parseInt(w.quantity) || 0), 0);
   const ratedWines = cellar.filter(w => w.rating);
   const avgRating = ratedWines.length ? (ratedWines.reduce((s, w) => s + w.rating, 0) / ratedWines.length).toFixed(1) : '—';
   const now = new Date().getFullYear();
-  const readyCount = cellar.filter(w => {
+  const readyCount = activeCellar.filter(w => {
     if (isSpiritOrWhiskey(w.type)) return true;
     const from = parseInt(w.drinkFrom) || 0;
     const until = parseInt(w.drinkUntil) || 9999;
     return now >= from && now <= until;
   }).reduce((s, w) => s + (parseInt(w.quantity) || 0), 0);
-  const totalValue = cellar.reduce((s, w) => s + (w.marketValue || 0) * (parseInt(w.quantity) || 1), 0);
+  const totalValue = activeCellar.reduce((s, w) => s + (w.marketValue || 0) * (parseInt(w.quantity) || 1), 0);
+  const consumedCount = cellar.reduce((s, w) => s + ((w.consumptionHistory || []).length), 0);
 
   // Dynamic greeting
   const hour = new Date().getHours();
@@ -759,9 +764,11 @@ function renderDashboard() {
   document.getElementById('avgRating').textContent = avgRating;
   animateValue('readyToDrink', readyCount);
   document.getElementById('totalValue').textContent = '€' + Math.round(totalValue).toLocaleString();
+  const consumedEl = document.getElementById('consumedCount');
+  if (consumedEl) consumedEl.textContent = consumedCount;
 
-  // Top bottles by value
-  const topValue = [...cellar].sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0)).slice(0, 6);
+  // Top bottles by value (active only)
+  const topValue = [...activeCellar].sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0)).slice(0, 6);
   const topList = document.getElementById('topValueList');
   if (topList) {
     topList.innerHTML = topValue.length === 0
@@ -772,22 +779,32 @@ function renderDashboard() {
       }).join('');
   }
 
-  // Ready to drink — prioritize wines in their drink window, then spirits
-  const winesReady = cellar.filter(w => {
+  // Ready to drink — prioritize wines in their drink window, then spirits (active only)
+  const winesReady = activeCellar.filter(w => {
     if (isSpiritOrWhiskey(w.type)) return false;
     const from = parseInt(w.drinkFrom) || 0;
     const until = parseInt(w.drinkUntil) || 9999;
     return now >= from && now <= until;
   });
-  const spiritsReady = cellar.filter(w => isSpiritOrWhiskey(w.type));
+  const spiritsReady = activeCellar.filter(w => isSpiritOrWhiskey(w.type));
   const readyWines = [...winesReady, ...spiritsReady].slice(0, 8);
   const readyList = document.getElementById('readyWinesList');
   readyList.innerHTML = readyWines.length === 0
     ? '<div class="empty-state"><p>No bottles ready right now</p></div>'
     : readyWines.map(w => cardSmHTML(w)).join('');
 
-  // Recent
-  const recent = [...cellar].sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || '')).slice(0, 8);
+  // Recently opened
+  const allConsumptions = cellar.flatMap(w => (w.consumptionHistory || []).map(c => ({ ...c, bottle: w })));
+  allConsumptions.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const recentOpenedList = document.getElementById('recentOpenedList');
+  if (recentOpenedList) {
+    recentOpenedList.innerHTML = allConsumptions.length === 0
+      ? '<div class="empty-state"><p>No bottles opened yet</p></div>'
+      : allConsumptions.slice(0, 8).map(c => cardSmHTML(c.bottle, formatDate(c.date))).join('');
+  }
+
+  // Recent additions (active only)
+  const recent = [...activeCellar].sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || '')).slice(0, 8);
   document.getElementById('recentWinesList').innerHTML = recent.map(w => cardSmHTML(w)).join('');
 
   renderTypeChart();
@@ -836,7 +853,7 @@ function renderTypeChart() {
   const ctx = document.getElementById('typeChart');
   if (typeChartInstance) typeChartInstance.destroy();
   const types = {};
-  cellar.forEach(w => { types[w.type] = (types[w.type] || 0) + (parseInt(w.quantity) || 1); });
+  cellar.filter(w => w.status !== 'consumed').forEach(w => { types[w.type] = (types[w.type] || 0) + (parseInt(w.quantity) || 1); });
   // Sort by count descending
   const sorted = Object.entries(types).sort((a, b) => b[1] - a[1]);
   const colors = {
@@ -886,7 +903,7 @@ function renderRegionChart() {
   const ctx = document.getElementById('regionChart');
   if (regionChartInstance) regionChartInstance.destroy();
   const regions = {};
-  cellar.forEach(w => { const r = (w.region || 'Unknown').split(',')[0].trim(); regions[r] = (regions[r] || 0) + (parseInt(w.quantity) || 1); });
+  cellar.filter(w => w.status !== 'consumed').forEach(w => { const r = (w.region || 'Unknown').split(',')[0].trim(); regions[r] = (regions[r] || 0) + (parseInt(w.quantity) || 1); });
   const sorted = Object.entries(regions).sort((a, b) => b[1] - a[1]).slice(0, 10);
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   // Gradient palette for bars
@@ -931,17 +948,18 @@ function renderCategoryChart() {
   const ctx = document.getElementById('categoryChart');
   if (!ctx) return;
   if (categoryChartInstance) categoryChartInstance.destroy();
-  const cats = { Wine: 0, Whiskey: 0, Spirit: 0 };
-  cellar.forEach(w => {
+  const cats = { Wine: 0, Whiskey: 0, Tequila: 0, Spirit: 0 };
+  cellar.filter(w => w.status !== 'consumed').forEach(w => {
     const qty = parseInt(w.quantity) || 1;
     if (isWhiskey(w.type)) cats.Whiskey += qty;
-    else if (isSpirit(w.type)) cats.Spirit += qty;
+    else if (isTequila(w.type)) cats.Tequila += qty;
+    else if (SPIRIT_TYPES.includes(w.type)) cats.Spirit += qty;
     else cats.Wine += qty;
   });
   // Remove empty categories
   Object.keys(cats).forEach(k => { if (cats[k] === 0) delete cats[k]; });
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Spirit: '#2E86AB' };
+  const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Spirit: '#6C3483' };
   categoryChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
@@ -978,6 +996,10 @@ function renderCellar() {
   const search = (document.getElementById('cellarSearch')?.value || '').toLowerCase();
   const sort = document.getElementById('cellarSort')?.value || 'added';
 
+  // Filter by status (active / consumed / all)
+  if (cellarStatusFilter === 'active') wines = wines.filter(w => w.status !== 'consumed');
+  else if (cellarStatusFilter === 'consumed') wines = wines.filter(w => w.status === 'consumed');
+
   if (currentFilter !== 'all') wines = wines.filter(w => w.type === currentFilter);
   if (search) {
     wines = wines.filter(w =>
@@ -992,11 +1014,17 @@ function renderCellar() {
     case 'vintage': wines.sort((a, b) => (b.vintage || 0) - (a.vintage || 0)); break;
     case 'rating': wines.sort((a, b) => (b.rating || 0) - (a.rating || 0)); break;
     case 'value': wines.sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0)); break;
-    default: wines.sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || ''));
+    default:
+      if (cellarStatusFilter === 'consumed') {
+        wines.sort((a, b) => (b.consumedDate || '').localeCompare(a.consumedDate || ''));
+      } else {
+        wines.sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || ''));
+      }
   }
 
-  const totalQty = wines.reduce((s, w) => s + (parseInt(w.quantity) || 1), 0);
-  document.getElementById('cellarCount').textContent = totalQty + ' bottle' + (totalQty !== 1 ? 's' : '') + (totalQty !== wines.length ? ` (${wines.length} unique)` : '');
+  const totalQty = wines.reduce((s, w) => s + Math.max(parseInt(w.quantity) || 0, w.status === 'consumed' ? 1 : 1), 0);
+  const label = cellarStatusFilter === 'consumed' ? 'consumed' : 'bottle';
+  document.getElementById('cellarCount').textContent = wines.length + ' ' + label + (wines.length !== 1 ? 's' : '');
   const grid = document.getElementById('cellarGrid');
 
   if (wines.length === 0) {
@@ -1020,10 +1048,12 @@ function renderCellar() {
 
     const imgSrc = w.imageUrl ? (w.imageUrl.startsWith('data:') || w.imageUrl.startsWith('/') ? w.imageUrl : `/api/images/proxy?url=${encodeURIComponent(w.imageUrl)}`) : '';
 
+    const isConsumed = w.status === 'consumed';
+
     return `
-      <div class="wine-card" onclick="openWineModal('${w.id}')">
+      <div class="wine-card${isConsumed ? ' consumed' : ''}" onclick="openWineModal('${w.id}')">
         ${imgSrc ? `<img class="wine-card-image" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
-        ${w.quantity > 1 ? `<span class="wine-qty">${w.quantity} bottles</span>` : ''}
+        ${isConsumed ? `<span class="wine-qty consumed-badge">Consumed</span>` : w.quantity > 1 ? `<span class="wine-qty">${w.quantity} bottles</span>` : ''}
         <div class="wine-card-top">
           <div class="wine-color-bar type-${typeClass}"></div>
           <div>
@@ -1033,7 +1063,9 @@ function renderCellar() {
         </div>
         <div class="wine-card-details">
           ${detailChips}
-          <span class="wine-status status-${status.class}" style="font-size:0.72rem;padding:0.15rem 0.45rem">${status.label}</span>
+          ${isConsumed
+            ? `<span class="wine-status status-consumed" style="font-size:0.72rem;padding:0.15rem 0.45rem">Opened ${formatDate(w.consumedDate)}</span>`
+            : `<span class="wine-status status-${status.class}" style="font-size:0.72rem;padding:0.15rem 0.45rem">${status.label}</span>`}
         </div>
         <div class="wine-card-footer">
           <span class="wine-price">${marketVal ? marketVal + ' <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400">est. value</span>' : ''}</span>
@@ -1046,6 +1078,12 @@ function renderCellar() {
 function setCellarFilter(filter, btn) {
   currentFilter = filter;
   document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  renderCellar();
+}
+function setCellarStatusFilter(status, btn) {
+  cellarStatusFilter = status;
+  document.querySelectorAll('.status-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderCellar();
 }
@@ -1081,6 +1119,8 @@ function addBottle(event) {
     currency: 'EUR',
     size: '750ml',
     imageUrl: pendingBottleImage || null,
+    status: 'active',
+    consumptionHistory: [],
   };
 
   if (editingBottleId) {
@@ -1089,6 +1129,9 @@ function addBottle(event) {
     if (existing) {
       bottle.addedDate = existing.addedDate;
       bottle.rating = existing.rating;
+      bottle.status = existing.status || 'active';
+      bottle.consumptionHistory = existing.consumptionHistory || [];
+      bottle.consumedDate = existing.consumedDate;
       bottle.ctId = existing.ctId;
       bottle.communityScore = existing.communityScore;
       bottle.communityNotes = existing.communityNotes;
@@ -1346,7 +1389,7 @@ function openWineModal(id) {
     <div class="modal-detail-grid">
       <div class="modal-detail-item"><label>Type</label><div class="value"><span class="wine-type-dot type-${w.type.replace(/\s/g, '')}" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px"></span>${w.type}</div></div>
       ${isSW ? `<div class="modal-detail-item"><label>ABV</label><div class="value">${w.abv ? w.abv + '%' : '—'}</div></div>` : `<div class="modal-detail-item"><label>Grape</label><div class="value">${escHTML(w.grape || '—')}</div></div>`}
-      <div class="modal-detail-item"><label>Quantity</label><div class="value">${w.quantity || 1} bottle${(w.quantity || 1) > 1 ? 's' : ''}${w.pending ? ` <span style="font-size:0.75rem;color:var(--warning)">(${w.pending} pending)</span>` : ''}</div></div>
+      <div class="modal-detail-item"><label>Quantity</label><div class="value">${w.status === 'consumed' ? '<span style="color:var(--text-muted)">Consumed</span>' : `${w.quantity || 1} bottle${(w.quantity || 1) > 1 ? 's' : ''}`}${w.pending ? ` <span style="font-size:0.75rem;color:var(--warning)">(${w.pending} pending)</span>` : ''}${w.consumedDate ? ` <span style="font-size:0.75rem;color:var(--text-muted)">· Last opened ${formatDate(w.consumedDate)}</span>` : ''}</div></div>
       <div class="modal-detail-item"><label>${w.size ? 'Size' : 'Location'}</label><div class="value">${escHTML(w.size || w.location || '—')}</div></div>
       ${isSW
         ? `<div class="modal-detail-item"><label>Age Statement</label><div class="value">${w.age ? w.age + ' Years' : 'NAS'}</div></div>`
@@ -1359,6 +1402,7 @@ function openWineModal(id) {
       ${w.communityScore ? `<div class="modal-detail-item"><label>Community Score</label><div class="value">${w.communityScore}/100</div></div>` : ''}
     </div>
     ${w.notes ? `<div class="modal-notes">${escHTML(w.notes)}</div>` : ''}
+    ${w.consumptionHistory && w.consumptionHistory.length > 0 ? `<h4 style="margin-top:1.5rem;margin-bottom:0.75rem;font-family:'DM Sans',sans-serif;font-weight:600;font-size:0.95rem">Consumption History</h4>${w.consumptionHistory.slice().reverse().map(c => `<div class="consumption-entry"><span class="consumption-date">${formatDate(c.date)}</span>${c.notes ? `<span class="consumption-notes">${escHTML(c.notes)}</span>` : ''}</div>`).join('')}` : ''}
     ${wineTastings.length > 0 ? `<h4 style="margin-top:1.5rem;margin-bottom:0.75rem;font-family:'DM Sans',sans-serif;font-weight:600;font-size:0.95rem">Tasting History</h4>${wineTastings.map(t => `<div class="tasting-note-card"><div class="tasting-note-header"><span class="tasting-note-rating">${'★'.repeat(t.rating)}${'☆'.repeat(5 - t.rating)}</span><span class="date">${formatDate(t.date)}</span></div>${t.tags.length ? `<div class="tasting-note-tags">${t.tags.map(tag => `<span class="tag active">${tag}</span>`).join('')}</div>` : ''}${t.notes ? `<div class="tasting-note-text">${escHTML(t.notes)}</div>` : ''}</div>`).join('')}` : ''}
     ${w.editHistory && w.editHistory.length > 0 ? `<h4 style="margin-top:1.5rem;margin-bottom:0.75rem;font-family:'DM Sans',sans-serif;font-weight:600;font-size:0.95rem">Edit History</h4>${w.editHistory.slice().reverse().map(entry => {
       const d = new Date(entry.date);
@@ -1367,7 +1411,9 @@ function openWineModal(id) {
     }).join('')}` : ''}
     <div class="modal-actions">
       <button class="btn btn-primary btn-sm" onclick="editBottle('${w.id}')">Edit</button>
-      <button class="btn btn-secondary btn-sm" onclick="drinkBottle('${w.id}')">Open a Bottle</button>
+      ${w.status === 'consumed'
+        ? `<button class="btn btn-secondary btn-sm" onclick="restockBottle('${w.id}')">Restock</button>`
+        : `<button class="btn btn-secondary btn-sm" onclick="drinkBottle('${w.id}')">Open a Bottle</button>`}
       <button class="btn btn-danger btn-sm" onclick="removeWine('${w.id}')">Remove</button>
     </div>`;
 
@@ -1380,10 +1426,40 @@ function closeWineModal() { document.getElementById('wineModal').classList.remov
 function drinkBottle(id) {
   const w = cellar.find(b => b.id === id);
   if (!w) return;
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Track consumption
+  if (!w.consumptionHistory) w.consumptionHistory = [];
+  w.consumptionHistory.push({ date: today, notes: '' });
+
+  // Decrement quantity
   w.quantity = Math.max(0, (parseInt(w.quantity) || 1) - 1);
-  if (w.quantity === 0) { cellar = cellar.filter(b => b.id !== id); closeWineModal(); showToast(`Last bottle of ${w.name} — enjoy!`); }
-  else showToast(`Opened a ${w.name}. ${w.quantity} left.`);
+
+  if (w.quantity === 0) {
+    // Mark as consumed instead of deleting
+    w.status = 'consumed';
+    w.consumedDate = today;
+    closeWineModal();
+    showToast(`Last bottle of ${w.name} — cheers! 🥂`);
+  } else {
+    showToast(`Opened a ${w.name}. ${w.quantity} left.`);
+    // Refresh modal to show updated quantity & history
+    openWineModal(id);
+  }
   saveCellar(cellar); renderCellar(); renderDashboard();
+}
+
+function restockBottle(id) {
+  const w = cellar.find(b => b.id === id);
+  if (!w) return;
+  w.status = 'active';
+  w.quantity = 1;
+  w.consumedDate = null;
+  saveCellar(cellar);
+  showToast(`${w.name} restocked!`);
+  openWineModal(id);
+  renderCellar(); renderDashboard();
 }
 
 function removeWine(id) {

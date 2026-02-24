@@ -169,6 +169,15 @@
             <span class="stat-label">Est. Value</span>
           </div>
         </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(139,26,26,0.1);color:#8B1A1A">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2h8l-1 7H9L8 2z"/><line x1="12" y1="15" x2="12" y2="20"/><line x1="9" y1="20" x2="15" y2="20"/><path d="M9 9h6v2a3 3 0 01-3 3v0a3 3 0 01-3-3V9z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="consumedCount">0</span>
+            <span class="stat-label">Consumed</span>
+          </div>
+        </div>
       </div>
 
       <div class="charts-row charts-row-3">
@@ -204,6 +213,14 @@
 
       <div class="section-card">
         <div class="section-header">
+          <h3>Recently Opened</h3>
+          <a href="#" class="link-btn" onclick="setCellarStatusFilter('consumed', document.querySelector('[data-status=consumed]')); switchView('cellar')">View all &rarr;</a>
+        </div>
+        <div class="wine-list" id="recentOpenedList"></div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
           <h3>Recently Added</h3>
           <a href="#" class="link-btn" onclick="switchView('cellar')">View all &rarr;</a>
         </div>
@@ -226,6 +243,11 @@
         </div>
       </header>
 
+      <div class="status-filter-bar">
+        <button class="status-filter-btn active" data-status="active" onclick="setCellarStatusFilter('active', this)">In Cellar</button>
+        <button class="status-filter-btn" data-status="consumed" onclick="setCellarStatusFilter('consumed', this)">Opened</button>
+        <button class="status-filter-btn" data-status="all" onclick="setCellarStatusFilter('all', this)">All</button>
+      </div>
       <div class="filter-bar">
         <button class="filter-chip active" data-filter="all" onclick="setCellarFilter('all', this)">All</button>
         <span class="filter-divider">|</span>
