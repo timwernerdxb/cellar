@@ -1735,6 +1735,87 @@ input, select, textarea, button {
   max-width: 400px;
 }
 
+/* Welcome / Login Page */
+.welcome-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  padding: 2rem;
+}
+
+.welcome-hero {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.welcome-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 1rem;
+}
+
+.welcome-title {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.welcome-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  margin-top: 0.5rem;
+}
+
+.welcome-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  width: 100%;
+  max-width: 380px;
+}
+
+.welcome-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.welcome-input {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.welcome-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.welcome-btn {
+  width: 100%;
+  padding: 0.7rem;
+  font-size: 0.95rem;
+  margin-top: 0.25rem;
+}
+
+.welcome-card .auth-toggle {
+  margin-top: 0.5rem;
+}
+
+/* Hide sidebar when on welcome page */
+body.no-auth .sidebar { display: none; }
+body.no-auth .mobile-nav-toggle { display: none; }
+body.no-auth .main-content { margin-left: 0; }
+
 /* ============================================
    RESPONSIVE
    ============================================ */

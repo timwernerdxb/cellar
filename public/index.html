@@ -90,8 +90,37 @@
   <!-- Main Content Area -->
   <main class="main-content">
 
+    <!-- ==================== WELCOME / LOGIN VIEW ==================== -->
+    <section class="view active" id="view-welcome">
+      <div class="welcome-page">
+        <div class="welcome-hero">
+          <svg class="welcome-logo" viewBox="0 0 32 32" fill="none">
+            <path d="M16 2C16 2 10 8 10 16C10 19.3 12.7 22 16 22C19.3 22 22 19.3 22 16C22 8 16 2 16 2Z" fill="var(--accent)" opacity="0.2"/>
+            <path d="M16 2C16 2 10 8 10 16C10 19.3 12.7 22 16 22C19.3 22 22 19.3 22 16C22 8 16 2 16 2Z" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="16" y1="22" x2="16" y2="30" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="12" y1="30" x2="20" y2="30" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <h1 class="welcome-title">Cellar</h1>
+          <p class="welcome-subtitle">Track your wine, whiskey &amp; spirits collection</p>
+        </div>
+        <div class="welcome-card">
+          <form id="welcomeAuthForm" onsubmit="handleWelcomeAuth(event)" class="welcome-form">
+            <input type="email" id="welcomeEmail" placeholder="Email" required class="welcome-input">
+            <input type="password" id="welcomePassword" placeholder="Password" required minlength="6" class="welcome-input">
+            <input type="text" id="welcomeName" placeholder="Name (optional)" class="welcome-input" style="display:none">
+            <p class="auth-error" id="welcomeError" style="display:none"></p>
+            <button type="submit" class="btn btn-primary welcome-btn" id="welcomeSubmitBtn">Sign in</button>
+            <p class="auth-toggle">
+              <span id="welcomeToggleText">No account?</span>
+              <a href="#" onclick="toggleWelcomeMode(event)" id="welcomeToggleLink">Sign up</a>
+            </p>
+          </form>
+        </div>
+      </div>
+    </section>
+
     <!-- ==================== DASHBOARD VIEW ==================== -->
-    <section class="view active" id="view-dashboard">
+    <section class="view" id="view-dashboard">
       <header class="view-header">
         <div>
           <h1 id="dashGreeting">Good evening</h1>

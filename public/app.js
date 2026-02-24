@@ -29,20 +29,29 @@ async function checkAuthState() {
     const resp = await fetch('/api/auth/me', { credentials: 'include' });
     if (resp.ok) {
       currentUser = await resp.json();
-      updateAuthUI();
-      // Check if we should migrate local data
-      if (cellar.length > 0 && !localStorage.getItem('vino_synced')) {
-        showSyncPrompt();
-      } else {
-        await syncFromServer();
-      }
+      await enterApp();
     } else {
       currentUser = null;
+      showWelcome();
     }
   } catch {
-    currentUser = null; // offline or no server
+    currentUser = null;
+    showWelcome();
   }
+}
+
+function showWelcome() {
+  document.body.classList.add('no-auth');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-welcome').classList.add('active');
+}
+
+async function enterApp() {
+  document.body.classList.remove('no-auth');
   updateAuthUI();
+  // Load data from server
+  await syncFromServer();
+  switchView('dashboard');
 }
 
 function updateAuthUI() {
@@ -130,10 +139,76 @@ async function handleAuthSubmit(e) {
   }
 }
 
+let welcomeMode = 'login';
+
+function toggleWelcomeMode(e) {
+  e.preventDefault();
+  const nameField = document.getElementById('welcomeName');
+  const submitBtn = document.getElementById('welcomeSubmitBtn');
+  const toggleText = document.getElementById('welcomeToggleText');
+  const toggleLink = document.getElementById('welcomeToggleLink');
+  document.getElementById('welcomeError').style.display = 'none';
+
+  if (welcomeMode === 'login') {
+    welcomeMode = 'register';
+    nameField.style.display = 'block';
+    submitBtn.textContent = 'Create account';
+    toggleText.textContent = 'Have an account?';
+    toggleLink.textContent = 'Sign in';
+  } else {
+    welcomeMode = 'login';
+    nameField.style.display = 'none';
+    submitBtn.textContent = 'Sign in';
+    toggleText.textContent = 'No account?';
+    toggleLink.textContent = 'Sign up';
+  }
+}
+
+async function handleWelcomeAuth(e) {
+  e.preventDefault();
+  const email = document.getElementById('welcomeEmail').value.trim();
+  const password = document.getElementById('welcomePassword').value;
+  const name = document.getElementById('welcomeName').value.trim();
+  const errorEl = document.getElementById('welcomeError');
+  const submitBtn = document.getElementById('welcomeSubmitBtn');
+  errorEl.style.display = 'none';
+  submitBtn.disabled = true;
+  submitBtn.textContent = welcomeMode === 'login' ? 'Signing in...' : 'Creating account...';
+
+  try {
+    const endpoint = welcomeMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const body = welcomeMode === 'login' ? { email, password } : { email, password, name };
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errorEl.textContent = data.error || 'Something went wrong';
+      errorEl.style.display = 'block';
+      return;
+    }
+    currentUser = data;
+    showToast(`Welcome${currentUser.name ? ', ' + currentUser.name : ''}!`);
+    await enterApp();
+  } catch (err) {
+    errorEl.textContent = 'Connection error — try again';
+    errorEl.style.display = 'block';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = welcomeMode === 'login' ? 'Sign in' : 'Create account';
+  }
+}
+
 async function logout() {
   try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch {}
   currentUser = null;
+  cellar = [];
+  tastings = [];
   updateAuthUI();
+  showWelcome();
   showToast('Signed out');
 }
 
@@ -166,16 +241,11 @@ async function syncFromServer() {
     const resp = await fetch('/api/sync/download', { credentials: 'include' });
     if (!resp.ok) return;
     const data = await resp.json();
-    if (data.bottles && data.bottles.length > 0) {
-      cellar = data.bottles;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cellar));
-    }
-    if (data.tastings && data.tastings.length > 0) {
-      tastings = data.tastings;
-      localStorage.setItem(TASTINGS_KEY, JSON.stringify(tastings));
-    }
+    cellar = data.bottles || [];
+    tastings = data.tastings || [];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cellar));
+    localStorage.setItem(TASTINGS_KEY, JSON.stringify(tastings));
     localStorage.setItem('vino_last_sync', new Date().toISOString());
-    localStorage.setItem('vino_synced', '1');
     renderDashboard(); renderCellar();
   } catch (err) {
     console.warn('Sync from server failed:', err.message);
@@ -562,18 +632,7 @@ let currentRating = 0;
 let addCategory = 'wine';
 let editingBottleId = null;
 
-// One-time migration: if existing data is old sample data, replace with CSV
-const CT_VERSION_KEY = 'vino_data_version';
-const CURRENT_DATA_VERSION = 'csv_v4';
-if (localStorage.getItem(CT_VERSION_KEY) !== CURRENT_DATA_VERSION) {
-  cellar = getSampleData();
-  saveCellar(cellar);
-  tastings = [];
-  saveTastings(tastings);
-  localStorage.setItem(CT_VERSION_KEY, CURRENT_DATA_VERSION);
-}
-if (cellar.length === 0) { cellar = getSampleData(); saveCellar(cellar); }
-if (tastings.length === 0) { tastings = getSampleTastings(); saveTastings(tastings); }
+// Data starts empty — loaded from server after login
 
 // Ensure category field and market values
 cellar.forEach(w => {
@@ -588,15 +647,10 @@ function initTheme() {
 initTheme();
 
 document.addEventListener('DOMContentLoaded', () => {
-  renderDashboard();
-  renderCellar();
-  renderTastingWines();
-  renderPastTastings();
-  renderTimeline();
   setupStarRating();
   document.getElementById('tastingDate').value = new Date().toISOString().split('T')[0];
 
-  // Check auth state (async, non-blocking for initial render)
+  // Check auth — will show welcome page or load app
   checkAuthState();
 });
 
