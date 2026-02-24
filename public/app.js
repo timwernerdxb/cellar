@@ -317,7 +317,12 @@ function estimateMarketValue(bottle) {
   // If CSV imported with a market value, use it
   if (bottle.marketValue && bottle.marketValue > 0) return bottle.marketValue;
 
-  let base = bottle.price ? parseFloat(bottle.price) : (isSpiritOrWhiskey(bottle.type) ? 60 : 25);
+  // If user entered a purchase price, use it as the base market value
+  const userPrice = bottle.price ? parseFloat(bottle.price) : 0;
+  if (userPrice > 0) return userPrice;
+
+  // No price data at all — rough estimate from heuristics
+  let base = isSpiritOrWhiskey(bottle.type) ? 45 : 20;
 
   if (isWhiskey(bottle.type)) return estimateWhiskeyValue(bottle, base);
   if (isSpirit(bottle.type)) return estimateSpiritValue(bottle, base);
@@ -326,19 +331,20 @@ function estimateMarketValue(bottle) {
 
 function estimateWineValue(wine, base) {
   const regionMult = {
-    'bordeaux': 2.2, 'burgundy': 2.8, 'champagne': 1.8, 'napa': 1.9,
-    'barolo': 1.7, 'tuscany': 1.6, 'rioja': 1.3, 'rhone': 1.5, 'rhône': 1.5,
-    'mosel': 1.5, 'piedmont': 1.6, 'sonoma': 1.4, 'willamette': 1.3,
-    'mendoza': 1.0, 'loire': 1.2, 'douro': 1.3, 'priorat': 1.4,
+    'bordeaux': 1.8, 'burgundy': 2.2, 'champagne': 1.5, 'napa': 1.6,
+    'barolo': 1.5, 'tuscany': 1.4, 'rioja': 1.2, 'rhone': 1.3, 'rhône': 1.3,
+    'mosel': 1.3, 'piedmont': 1.4, 'sonoma': 1.3, 'willamette': 1.2,
+    'mendoza': 1.0, 'loire': 1.1, 'douro': 1.2, 'priorat': 1.3,
   };
   const grapeMult = {
-    'cabernet sauvignon': 1.4, 'pinot noir': 1.5, 'nebbiolo': 1.6,
-    'sangiovese': 1.2, 'merlot': 1.1, 'syrah': 1.2, 'shiraz': 1.2,
-    'chardonnay': 1.2, 'riesling': 1.3, 'sauvignon blanc': 1.0,
+    'cabernet sauvignon': 1.2, 'pinot noir': 1.3, 'nebbiolo': 1.4,
+    'sangiovese': 1.1, 'merlot': 1.0, 'syrah': 1.1, 'shiraz': 1.1,
+    'chardonnay': 1.1, 'riesling': 1.2, 'sauvignon blanc': 1.0,
   };
-  const premiumKw = ['chateau', 'château', 'domaine', 'opus', 'sassicaia', 'tignanello',
-    'penfolds', 'petrus', 'lafite', 'latour', 'mouton', 'margaux', 'romanee',
-    'leroy', 'krug', 'dom perignon', 'salon', 'cristal'];
+  const ultraPremiumKw = ['petrus', 'lafite', 'latour', 'mouton', 'margaux', 'romanee',
+    'leroy', 'dom perignon', 'salon', 'cristal', 'opus', 'sassicaia'];
+  const premiumKw = ['chateau', 'château', 'domaine', 'tignanello',
+    'penfolds', 'krug'];
 
   const region = (wine.region || '').toLowerCase();
   const grape = (wine.grape || '').toLowerCase();
@@ -348,28 +354,31 @@ function estimateWineValue(wine, base) {
 
   for (const [k, m] of Object.entries(regionMult)) { if (region.includes(k)) { base *= m; break; } }
   for (const [k, m] of Object.entries(grapeMult)) { if (grape.includes(k)) { base *= m; break; } }
-  if (age > 0 && age <= 5) base *= 1 + age * 0.04;
-  else if (age > 5 && age <= 15) base *= 1.2 + (age - 5) * 0.06;
-  else if (age > 15 && age <= 30) base *= 1.8 + (age - 15) * 0.03;
-  else if (age > 30) base *= 2.25 + Math.min((age - 30) * 0.015, 1.0);
-  for (const kw of premiumKw) { if (producer.includes(kw)) { base *= 1.5; break; } }
-  if (wine.type === 'Sparkling') base *= 1.15;
+  if (age > 0 && age <= 5) base *= 1 + age * 0.03;
+  else if (age > 5 && age <= 15) base *= 1.15 + (age - 5) * 0.04;
+  else if (age > 15 && age <= 30) base *= 1.55 + (age - 15) * 0.02;
+  else if (age > 30) base *= 1.85 + Math.min((age - 30) * 0.01, 0.5);
+  let brandApplied = false;
+  for (const kw of ultraPremiumKw) { if (producer.includes(kw)) { base *= 1.5; brandApplied = true; break; } }
+  if (!brandApplied) { for (const kw of premiumKw) { if (producer.includes(kw)) { base *= 1.2; break; } } }
+  if (wine.type === 'Sparkling' || wine.type === 'Champagne') base *= 1.1;
 
   const hash = (wine.name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  base *= 0.9 + (hash % 20) / 100;
+  base *= 0.95 + (hash % 10) / 100;
   return Math.round(base * 100) / 100;
 }
 
 function estimateWhiskeyValue(w, base) {
   const regionMult = {
-    'islay': 1.8, 'speyside': 1.5, 'highland': 1.4, 'lowland': 1.2,
-    'campbeltown': 1.5, 'kentucky': 1.3, 'tennessee': 1.2,
-    'japan': 2.0, 'ireland': 1.1, 'taiwan': 1.6,
+    'islay': 1.4, 'speyside': 1.3, 'highland': 1.2, 'lowland': 1.1,
+    'campbeltown': 1.3, 'kentucky': 1.1, 'tennessee': 1.0,
+    'japan': 1.4, 'ireland': 1.0, 'taiwan': 1.3,
   };
-  const premiumKw = ['macallan', 'yamazaki', 'hibiki', 'nikka', 'pappy', 'van winkle',
-    'blanton', 'buffalo trace', 'lagavulin', 'ardbeg', 'laphroaig', 'glenfiddich',
-    'glenlivet', 'balvenie', 'dalmore', 'springbank', 'redbreast', 'midleton',
-    'maker\'s mark', 'woodford', 'whistlepig', 'kavalan', 'wild turkey'];
+  // Top-tier brands get a bigger bump; mid-tier brands get a smaller one
+  const ultraPremiumKw = ['macallan', 'yamazaki', 'pappy', 'van winkle', 'dalmore', 'springbank', 'kavalan'];
+  const premiumKw = ['hibiki', 'nikka', 'blanton', 'lagavulin', 'ardbeg', 'laphroaig',
+    'glenfiddich', 'glenlivet', 'balvenie', 'redbreast', 'midleton',
+    'buffalo trace', 'maker\'s mark', 'woodford', 'whistlepig', 'wild turkey'];
 
   const region = (w.region || '').toLowerCase();
   const nameProducer = ((w.producer || '') + ' ' + (w.name || '')).toLowerCase();
@@ -377,34 +386,38 @@ function estimateWhiskeyValue(w, base) {
 
   for (const [k, m] of Object.entries(regionMult)) { if (region.includes(k)) { base *= m; break; } }
 
-  // Age premium — whiskey appreciates steeply with age statements
-  if (age >= 10 && age < 15) base *= 1.5;
-  else if (age >= 15 && age < 18) base *= 2.2;
-  else if (age >= 18 && age < 21) base *= 3.0;
-  else if (age >= 21 && age < 25) base *= 4.5;
-  else if (age >= 25 && age < 30) base *= 7.0;
-  else if (age >= 30) base *= 10 + (age - 30) * 0.5;
+  // Age premium — moderate scaling
+  if (age >= 10 && age < 15) base *= 1.3;
+  else if (age >= 15 && age < 18) base *= 1.8;
+  else if (age >= 18 && age < 21) base *= 2.5;
+  else if (age >= 21 && age < 25) base *= 3.5;
+  else if (age >= 25 && age < 30) base *= 5.0;
+  else if (age >= 30) base *= 7 + (age - 30) * 0.3;
 
-  for (const kw of premiumKw) { if (nameProducer.includes(kw)) { base *= 1.6; break; } }
-  if (w.type === 'Japanese') base *= 1.3;
-  if (w.abv && parseFloat(w.abv) > 50) base *= 1.15; // Cask strength premium
+  let brandApplied = false;
+  for (const kw of ultraPremiumKw) { if (nameProducer.includes(kw)) { base *= 1.5; brandApplied = true; break; } }
+  if (!brandApplied) { for (const kw of premiumKw) { if (nameProducer.includes(kw)) { base *= 1.2; break; } } }
+  if (w.abv && parseFloat(w.abv) > 50) base *= 1.1; // Cask strength premium
 
   const hash = (w.name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  base *= 0.9 + (hash % 20) / 100;
+  base *= 0.95 + (hash % 10) / 100;
   return Math.round(base * 100) / 100;
 }
 
 function estimateSpiritValue(s, base) {
-  const premiumKw = ['clase azul', 'don julio', 'patron', 'herradura', 'casamigos',
-    'fortaleza', 'tears of llorona', 'last drop', 'diplomatico', 'zacapa',
-    'flor de cana', 'appleton', 'havana club', 'hennessy', 'remy martin', 'louis xiii'];
+  const ultraPremiumKw = ['clase azul', 'louis xiii', 'tears of llorona', 'last drop'];
+  const premiumKw = ['don julio', 'patron', 'herradura', 'casamigos',
+    'fortaleza', 'diplomatico', 'zacapa', 'flor de cana', 'appleton',
+    'havana club', 'hennessy', 'remy martin'];
   const nameProducer = ((s.producer || '') + ' ' + (s.name || '')).toLowerCase();
-  for (const kw of premiumKw) { if (nameProducer.includes(kw)) { base *= 1.6; break; } }
-  if (/limited|edition|reserva|extra anejo|ultra/i.test(s.name || '')) base *= 1.5;
+  let brandApplied = false;
+  for (const kw of ultraPremiumKw) { if (nameProducer.includes(kw)) { base *= 1.5; brandApplied = true; break; } }
+  if (!brandApplied) { for (const kw of premiumKw) { if (nameProducer.includes(kw)) { base *= 1.2; break; } } }
+  if (/limited|edition|reserva|extra anejo|ultra/i.test(s.name || '')) base *= 1.3;
   const age = parseInt(s.age) || 0;
-  if (age >= 10) base *= 1 + age * 0.08;
+  if (age >= 10) base *= 1 + age * 0.05;
   const hash = (s.name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  base *= 0.9 + (hash % 20) / 100;
+  base *= 0.95 + (hash % 10) / 100;
   return Math.round(base * 100) / 100;
 }
 
@@ -447,7 +460,7 @@ function parseCellarTrackerCSV() {
     const designation = get('Designation');
     const vineyard = get('Vineyard');
     const size = get('Size');
-    const currency = get('Currency') || 'EUR';
+    const currency = get('Currency') || 'USD';
     const priceRaw = get('Price').replace(',', '.');
     const price = parseFloat(priceRaw) || null;
     const valueRaw = get('Value').replace(',', '.');
@@ -654,7 +667,13 @@ cellar.forEach(w => {
   if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : isSake(w.type) ? 'sake' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine';
   if (!w.status) w.status = 'active';
   if (!w.consumptionHistory) w.consumptionHistory = [];
-  if (!w.marketValue || w.marketValue <= 0) w.marketValue = estimateMarketValue(w);
+  // Re-estimate market values for non-CSV bottles (no ctId = added via scan/manual)
+  // CSV bottles keep their CellarTracker values; scan/manual bottles get fresh estimates
+  if (!w.ctId) {
+    w.marketValue = estimateMarketValue(w);
+  } else if (!w.marketValue || w.marketValue <= 0) {
+    w.marketValue = estimateMarketValue(w);
+  }
 });
 
 function initTheme() {
@@ -769,7 +788,7 @@ function renderDashboard() {
   document.getElementById('avgRating').textContent = avgRating;
   animateValue('readyToDrink', readyCount);
   const valueEl = document.getElementById('totalValue');
-  valueEl.innerHTML = '€' + Math.round(totalValue).toLocaleString() + (totalValueAll > totalValue ? ` <span class="value-total-incl">(€${Math.round(totalValueAll).toLocaleString()})</span>` : '');
+  valueEl.innerHTML = '$' + Math.round(totalValue).toLocaleString() + (totalValueAll > totalValue ? ` <span class="value-total-incl">($${Math.round(totalValueAll).toLocaleString()})</span>` : '');
   const consumedEl = document.getElementById('consumedCount');
   if (consumedEl) consumedEl.textContent = consumedCount;
 
@@ -780,7 +799,7 @@ function renderDashboard() {
     topList.innerHTML = topValue.length === 0
       ? '<div class="empty-state"><p>Add bottles to see top value</p></div>'
       : topValue.map(w => {
-        const currSym = (w.currency || 'EUR') === 'EUR' ? '€' : '$';
+        const currSym = '$';
         return cardSmHTML(w, `${currSym}${Math.round(w.marketValue || 0).toLocaleString()}`);
       }).join('');
   }
@@ -1077,7 +1096,7 @@ function renderCellar() {
   grid.innerHTML = wines.map(w => {
     const status = getDrinkStatus(w);
     const ratingStars = w.rating ? '★'.repeat(w.rating) + '☆'.repeat(5 - w.rating) : '';
-    const currSym = (w.currency || 'EUR') === 'EUR' ? '€' : '$';
+    const currSym = '$';
     const marketVal = w.marketValue ? currSym + w.marketValue.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '';
     const typeClass = w.type.replace(/\s/g, '');
     const isSW = isSpiritOrWhiskey(w.type);
@@ -1189,10 +1208,10 @@ function addBottle(event) {
     notes: document.getElementById('wineNotes').value.trim(),
     addedDate: new Date().toISOString().split('T')[0],
     rating: null,
-    category: isWhiskey(type) ? 'whiskey' : isTequila(type) ? 'tequila' : SPIRIT_TYPES.includes(type) ? 'spirit' : 'wine',
+    category: isWhiskey(type) ? 'whiskey' : isTequila(type) ? 'tequila' : isSake(type) ? 'sake' : SPIRIT_TYPES.includes(type) ? 'spirit' : 'wine',
     age: isSW ? (parseInt(document.getElementById('whiskeyAge').value) || null) : null,
     abv: isSW ? (parseFloat(document.getElementById('whiskeyAbv').value) || null) : null,
-    currency: 'EUR',
+    currency: 'USD',
     size: '750ml',
     imageUrl: pendingBottleImage || null,
     status: 'active',
@@ -1453,7 +1472,7 @@ function openWineModal(id) {
   const purchasePrice = w.price ? parseFloat(w.price) : null;
   const appreciation = purchasePrice ? (((marketVal - purchasePrice) / purchasePrice) * 100).toFixed(0) : null;
   const isSW = isSpiritOrWhiskey(w.type);
-  const currSym = (w.currency || 'EUR') === 'EUR' ? '€' : '$';
+  const currSym = '$';
 
   const modalImgSrc = w.imageUrl ? (w.imageUrl.startsWith('data:') || w.imageUrl.startsWith('/') ? w.imageUrl : `/api/images/proxy?url=${encodeURIComponent(w.imageUrl)}`) : '';
 
@@ -2113,7 +2132,7 @@ function parseCSVToBottles(headers, lines) {
     const appellation = get(row, 'Appellation') || get(row, 'appellation');
     const designation = get(row, 'Designation') || get(row, 'designation');
     const size = get(row, 'Size') || get(row, 'size') || '750ml';
-    const currency = get(row, 'Currency') || get(row, 'currency') || 'EUR';
+    const currency = get(row, 'Currency') || get(row, 'currency') || 'USD';
     const priceRaw = (get(row, 'Price') || get(row, 'price') || '').replace(',', '.');
     const price = parseFloat(priceRaw) || null;
     const valueRaw = (get(row, 'Value') || get(row, 'value') || '').replace(',', '.');
