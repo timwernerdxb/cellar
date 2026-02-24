@@ -1008,8 +1008,11 @@ function renderCellar() {
       ? `<span class="wine-detail-chip">${escHTML(w.type)}</span>${w.abv ? `<span class="wine-detail-chip">${w.abv}% ABV</span>` : ''}${w.size && w.size !== '750ml' ? `<span class="wine-detail-chip">${w.size}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`
       : `<span class="wine-detail-chip">${escHTML(w.type)}</span>${w.grape ? `<span class="wine-detail-chip">${escHTML(w.grape)}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`;
 
+    const imgSrc = w.imageUrl ? (w.imageUrl.startsWith('data:') || w.imageUrl.startsWith('/') ? w.imageUrl : `/api/images/proxy?url=${encodeURIComponent(w.imageUrl)}`) : '';
+
     return `
       <div class="wine-card" onclick="openWineModal('${w.id}')">
+        ${imgSrc ? `<img class="wine-card-image" src="${imgSrc}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         ${w.quantity > 1 ? `<span class="wine-qty">${w.quantity} bottles</span>` : ''}
         <div class="wine-card-top">
           <div class="wine-color-bar type-${typeClass}"></div>
@@ -1067,6 +1070,7 @@ function addBottle(event) {
     abv: isSW ? (parseFloat(document.getElementById('whiskeyAbv').value) || null) : null,
     currency: 'EUR',
     size: '750ml',
+    imageUrl: pendingBottleImage || null,
   };
 
   if (editingBottleId) {
@@ -1086,6 +1090,7 @@ function addBottle(event) {
       bottle.pending = existing.pending;
       bottle.country = existing.country;
       bottle.subRegion = existing.subRegion;
+      if (!bottle.imageUrl) bottle.imageUrl = existing.imageUrl;
       // Preserve CSV market value if it existed — only re-estimate if price changed
       if (existing.marketValue && existing.marketValue > 0) {
         const priceChanged = (bottle.price || null) !== (existing.price || null);
@@ -1121,6 +1126,8 @@ function addBottle(event) {
   saveCellar(cellar);
   document.getElementById('addWineForm').reset();
   document.getElementById('wineQuantity').value = 1;
+  pendingBottleImage = null;
+  removeBottleImage();
   switchView('cellar');
 }
 
@@ -1153,6 +1160,14 @@ function editBottle(id) {
   document.getElementById('wineNotes').value = w.notes || '';
   if (w.age) document.getElementById('whiskeyAge').value = w.age;
   if (w.abv) document.getElementById('whiskeyAbv').value = w.abv;
+
+  // Show existing bottle image
+  if (w.imageUrl) {
+    const displayUrl = w.imageUrl.startsWith('data:') || w.imageUrl.startsWith('/') ? w.imageUrl : `/api/images/proxy?url=${encodeURIComponent(w.imageUrl)}`;
+    setBottleImagePreview(displayUrl, w.imageUrl);
+  } else {
+    removeBottleImage();
+  }
 
   updateAddViewTitle(true);
   document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1311,8 +1326,11 @@ function openWineModal(id) {
   const isSW = isSpiritOrWhiskey(w.type);
   const currSym = (w.currency || 'EUR') === 'EUR' ? '€' : '$';
 
+  const modalImgSrc = w.imageUrl ? (w.imageUrl.startsWith('data:') || w.imageUrl.startsWith('/') ? w.imageUrl : `/api/images/proxy?url=${encodeURIComponent(w.imageUrl)}`) : '';
+
   const body = document.getElementById('modalBody');
   body.innerHTML = `
+    ${modalImgSrc ? `<img class="modal-bottle-image" src="${modalImgSrc}" alt="${escHTML(w.name)}" onerror="this.style.display='none'">` : ''}
     <h2 class="modal-wine-title">${escHTML(w.name)}</h2>
     <p class="modal-wine-subtitle">${escHTML(w.producer || '')} ${w.vintage ? '· ' + w.vintage : ''} · ${escHTML(w.region || '')}${w.age ? ' · ' + w.age + ' Year' : ''}${w.designation ? ' · ' + escHTML(w.designation) : ''}</p>
     <div class="modal-detail-grid">
@@ -1985,6 +2003,314 @@ function clearAllData() {
   cellar = []; tastings = [];
   renderDashboard(); renderCellar(); renderTastingWines(); renderPastTastings(); renderTimeline();
   showToast('All data cleared');
+}
+
+// ============ BOTTLE IMAGE ============
+
+let pendingBottleImage = null; // { url, dataUrl } — set before saving
+
+function searchBottleImage() {
+  const name = document.getElementById('wineName').value.trim();
+  const producer = document.getElementById('wineProducer').value.trim();
+  const type = document.getElementById('wineType').value;
+  const query = [name, producer, type].filter(Boolean).join(' ');
+
+  if (!query || query.length < 3) {
+    showToast('Enter a bottle name first');
+    return;
+  }
+
+  const resultsEl = document.getElementById('imageSearchResults');
+  const gridEl = document.getElementById('imageSearchGrid');
+  const loadingEl = document.getElementById('imageSearchLoading');
+
+  resultsEl.style.display = 'block';
+  loadingEl.style.display = 'flex';
+  gridEl.innerHTML = '';
+
+  fetch(`/api/images/search?q=${encodeURIComponent(query)}`, { credentials: 'include' })
+    .then(r => r.json())
+    .then(data => {
+      loadingEl.style.display = 'none';
+      const images = data.images || [];
+      if (images.length === 0) {
+        gridEl.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:0.85rem">No images found. Try uploading a photo instead.</p>';
+        return;
+      }
+      gridEl.innerHTML = images.map((img, i) => {
+        const src = `/api/images/proxy?url=${encodeURIComponent(img.thumbnail || img.url)}`;
+        return `<div class="image-search-item" onclick="selectSearchImage(${i})">
+          <img src="${src}" alt="Result ${i + 1}" loading="lazy" onerror="this.parentElement.style.display='none'">
+        </div>`;
+      }).join('');
+      // Store URLs for selection
+      window._imageSearchResults = images;
+    })
+    .catch(err => {
+      loadingEl.style.display = 'none';
+      gridEl.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--danger);font-size:0.85rem">Search failed. Try uploading a photo instead.</p>';
+    });
+}
+
+function selectSearchImage(index) {
+  const images = window._imageSearchResults || [];
+  if (!images[index]) return;
+
+  const img = images[index];
+  const proxyUrl = `/api/images/proxy?url=${encodeURIComponent(img.url)}`;
+
+  // Show preview
+  setBottleImagePreview(proxyUrl, img.url);
+  closeImageSearch();
+  showToast('Image selected');
+}
+
+function closeImageSearch() {
+  document.getElementById('imageSearchResults').style.display = 'none';
+}
+
+function setBottleImagePreview(displayUrl, storeUrl) {
+  const preview = document.getElementById('bottleImagePreview');
+  const imgEl = document.getElementById('bottleImageImg');
+  const dataInput = document.getElementById('bottleImageData');
+
+  imgEl.src = displayUrl;
+  dataInput.value = storeUrl || displayUrl;
+  preview.style.display = 'block';
+  pendingBottleImage = storeUrl || displayUrl;
+}
+
+function removeBottleImage() {
+  document.getElementById('bottleImagePreview').style.display = 'none';
+  document.getElementById('bottleImageImg').src = '';
+  document.getElementById('bottleImageData').value = '';
+  pendingBottleImage = null;
+}
+
+function handleBottleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Resize image to save storage (max 400px wide)
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const maxW = 400;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      setBottleImagePreview(dataUrl, dataUrl);
+      showToast('Photo added');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+function promptImageUrl() {
+  const url = prompt('Paste image URL:');
+  if (url && url.startsWith('http')) {
+    const proxyUrl = `/api/images/proxy?url=${encodeURIComponent(url)}`;
+    setBottleImagePreview(proxyUrl, url);
+    showToast('Image URL set');
+  }
+}
+
+// ============ CSV FILE UPLOAD ============
+
+function handleCSVUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById('csvImportStatus');
+  statusEl.style.display = 'block';
+  statusEl.className = 'csv-import-status';
+  statusEl.textContent = 'Reading file...';
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const csvText = e.target.result;
+      const lines = parseCSVLines(csvText);
+      if (lines.length < 2) {
+        statusEl.className = 'csv-import-status error';
+        statusEl.textContent = 'CSV file appears empty or has no data rows.';
+        return;
+      }
+
+      const headers = lines[0].map(h => h.trim());
+      const bottles = parseCSVToBottles(headers, lines);
+
+      if (bottles.length === 0) {
+        statusEl.className = 'csv-import-status error';
+        statusEl.textContent = 'No bottles could be parsed from the CSV. Check the format.';
+        return;
+      }
+
+      // Merge with existing collection (skip duplicates by name+vintage)
+      let added = 0;
+      let skipped = 0;
+      for (const bottle of bottles) {
+        const exists = cellar.some(b =>
+          b.name === bottle.name && b.vintage === bottle.vintage && b.producer === bottle.producer
+        );
+        if (exists) {
+          skipped++;
+        } else {
+          cellar.push(bottle);
+          added++;
+        }
+      }
+
+      saveCellar(cellar);
+      renderCellar();
+      renderDashboard();
+
+      statusEl.className = 'csv-import-status success';
+      statusEl.textContent = `Imported ${added} bottles${skipped > 0 ? ` (${skipped} duplicates skipped)` : ''}. Total collection: ${cellar.length}`;
+      showToast(`${added} bottles imported from CSV`);
+    } catch (err) {
+      statusEl.className = 'csv-import-status error';
+      statusEl.textContent = 'Error parsing CSV: ' + err.message;
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function parseCSVToBottles(headers, lines) {
+  const bottles = [];
+  const get = (row, col) => {
+    // Try exact match first
+    let idx = headers.indexOf(col);
+    // Try case-insensitive
+    if (idx < 0) idx = headers.findIndex(h => h.toLowerCase() === col.toLowerCase());
+    return idx >= 0 && idx < row.length ? (row[idx] || '').trim() : '';
+  };
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i];
+    if (row.length < 2) continue;
+
+    // Support both CellarTracker and generic CSV formats
+    const name = get(row, 'Wine') || get(row, 'Name') || get(row, 'wine') || get(row, 'name');
+    if (!name) continue;
+
+    const producer = get(row, 'Producer') || get(row, 'Winery') || get(row, 'Brand') || get(row, 'producer');
+    const vintageRaw = parseInt(get(row, 'Vintage') || get(row, 'Year') || get(row, 'vintage')) || null;
+    const vintage = vintageRaw && vintageRaw > 1900 && vintageRaw < 2100 ? vintageRaw : null;
+    const ctType = get(row, 'Type') || get(row, 'type');
+    const ctColor = get(row, 'Color') || get(row, 'color');
+    const ctCategory = get(row, 'Category') || get(row, 'category');
+    const varietal = get(row, 'Varietal') || get(row, 'Grape') || get(row, 'MasterVarietal') || get(row, 'grape');
+    const country = get(row, 'Country') || get(row, 'country');
+    const region = get(row, 'Region') || get(row, 'region');
+    const subRegion = get(row, 'SubRegion') || get(row, 'Sub-Region');
+    const appellation = get(row, 'Appellation') || get(row, 'appellation');
+    const designation = get(row, 'Designation') || get(row, 'designation');
+    const size = get(row, 'Size') || get(row, 'size') || '750ml';
+    const currency = get(row, 'Currency') || get(row, 'currency') || 'EUR';
+    const priceRaw = (get(row, 'Price') || get(row, 'price') || '').replace(',', '.');
+    const price = parseFloat(priceRaw) || null;
+    const valueRaw = (get(row, 'Value') || get(row, 'value') || '').replace(',', '.');
+    const marketValue = parseFloat(valueRaw) || null;
+    const quantity = parseInt(get(row, 'Quantity') || get(row, 'quantity') || get(row, 'Qty')) || 1;
+    const beginConsume = parseInt(get(row, 'BeginConsume') || get(row, 'DrinkFrom')) || null;
+    const endConsume = parseInt(get(row, 'EndConsume') || get(row, 'DrinkUntil')) || null;
+    const notes = get(row, 'PNotes') || get(row, 'Notes') || get(row, 'notes');
+    const pScore = parseInt(get(row, 'PScore') || get(row, 'Rating') || get(row, 'rating')) || null;
+    const cScore = parseFloat(get(row, 'CScore') || get(row, 'CommunityScore')) || null;
+
+    // Build region string
+    const regionParts = [
+      subRegion && subRegion !== 'Unknown' ? subRegion : '',
+      region && region !== 'Unknown' ? region : '',
+      country
+    ].filter(Boolean);
+    const regionStr = regionParts.join(', ');
+
+    // Determine type
+    const allText = [name, designation, varietal, ctCategory, producer, region, country, subRegion, appellation].join(' ').toLowerCase();
+    let type = 'Red';
+    let category = 'wine';
+
+    if (ctType === 'Spirits' || ctCategory === 'Distilled' || /whisk[e]?y|scotch|bourbon|single malt|tequila|mezcal|\brum\b|cognac|brandy|\bgin\b|vodka/i.test(allText)) {
+      if (/whisk[e]?y|scotch|single malt|bourbon/i.test(allText)) {
+        if (/bourbon/i.test(allText)) type = 'Bourbon';
+        else if (/scotch|single malt/i.test(allText) || /scotland|speyside|highland|islay/i.test(allText)) type = 'Scotch';
+        else if (/irish/i.test(allText)) type = 'Irish';
+        else if (/japan/i.test(allText)) type = 'Japanese';
+        else if (/rye whisk/i.test(allText)) type = 'Rye';
+        else if (/tennessee/i.test(allText)) type = 'Tennessee';
+        else type = 'Single Malt';
+        category = 'whiskey';
+      } else if (/tequila|agave/i.test(allText)) { type = 'Tequila'; category = 'spirit'; }
+      else if (/mezcal/i.test(allText)) { type = 'Mezcal'; category = 'spirit'; }
+      else if (/\brum\b|\bron\b/i.test(allText)) { type = 'Rum'; category = 'spirit'; }
+      else if (/cognac/i.test(allText)) { type = 'Cognac'; category = 'spirit'; }
+      else if (/brandy/i.test(allText)) { type = 'Brandy'; category = 'spirit'; }
+      else if (/\bgin\b/i.test(allText)) { type = 'Gin'; category = 'spirit'; }
+      else if (/vodka/i.test(allText)) { type = 'Vodka'; category = 'spirit'; }
+      else { type = 'Other Spirit'; category = 'spirit'; }
+    } else if (ctType === 'Red' || ctColor === 'Red') { type = 'Red'; }
+    else if (ctType === 'White' || ctColor === 'White') { type = 'White'; }
+    else if (/ros[eé]/i.test(ctType + ctColor)) { type = 'Rosé'; }
+    else if (/sparkling|champagne/i.test(ctType + ctColor)) { type = 'Sparkling'; }
+    else if (/dessert|sweet/i.test(ctType + ctCategory)) { type = 'Dessert'; }
+    else if (/fortified|port|sherry/i.test(ctType + ctCategory)) { type = 'Fortified'; }
+
+    // Extract age
+    const ageMatch = (name + ' ' + designation).match(/(\d{1,2})\s*(?:year|yr|ans|jahre)/i);
+    const age = ageMatch ? parseInt(ageMatch[1]) : null;
+
+    // Extract ABV
+    const abvMatch = (name + ' ' + designation).match(/(\d{2,3}(?:[.,]\d{1,2})?)\s*%/);
+    const abv = abvMatch ? parseFloat(abvMatch[1].replace(',', '.')) : null;
+
+    const bottle = {
+      id: get(row, 'iWine') || (Date.now() + i).toString(),
+      name,
+      producer,
+      vintage,
+      type,
+      grape: category === 'wine' ? varietal : '',
+      varietal,
+      region: regionStr,
+      country,
+      subRegion: subRegion !== 'Unknown' ? subRegion : '',
+      appellation: appellation !== 'Unknown' ? appellation : '',
+      designation,
+      size,
+      currency,
+      quantity,
+      price,
+      marketValue: marketValue || null,
+      location: '',
+      drinkFrom: beginConsume && beginConsume < 9999 ? beginConsume : null,
+      drinkUntil: endConsume && endConsume < 9999 ? endConsume : null,
+      notes: notes || '',
+      communityScore: cScore,
+      personalScore: pScore,
+      addedDate: new Date().toISOString().split('T')[0],
+      rating: pScore ? Math.min(5, Math.round(pScore / 20)) : null,
+      category,
+      age,
+      abv,
+      ctId: get(row, 'iWine') || null,
+    };
+
+    // Estimate market value if not provided
+    if (!bottle.marketValue) bottle.marketValue = estimateMarketValue(bottle);
+
+    bottles.push(bottle);
+  }
+
+  return bottles;
 }
 
 // Settings auto-loaded on view switch via switchView()

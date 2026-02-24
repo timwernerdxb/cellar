@@ -21,7 +21,7 @@ pool.on('error', (err) => {
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
 app.use(cookieParser());
 
 // Static files
@@ -36,6 +36,7 @@ app.use('/api/bottles', require('./routes/bottles'));
 app.use('/api/tastings', require('./routes/tastings'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/images', require('./routes/images'));
 
 // SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

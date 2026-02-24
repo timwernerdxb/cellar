@@ -316,6 +316,44 @@
         <canvas id="captureCanvas" style="display:none"></canvas>
       </div>
 
+      <!-- Bottle Image Section -->
+      <div class="form-divider"><span>Bottle Image</span></div>
+      <div class="bottle-image-section" id="bottleImageSection">
+        <div class="bottle-image-preview" id="bottleImagePreview" style="display:none">
+          <img id="bottleImageImg" alt="Bottle image">
+          <button type="button" class="btn-remove-image" onclick="removeBottleImage()" title="Remove image">&times;</button>
+        </div>
+        <div class="bottle-image-actions" id="bottleImageActions">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="searchBottleImage()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            Find Image
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('bottleImageUpload').click()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload Photo
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="promptImageUrl()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            Paste URL
+          </button>
+        </div>
+        <input type="file" id="bottleImageUpload" accept="image/*" style="display:none" onchange="handleBottleImageUpload(event)">
+        <input type="hidden" id="bottleImageData" value="">
+      </div>
+
+      <!-- Image Search Modal -->
+      <div class="image-search-results" id="imageSearchResults" style="display:none">
+        <div class="image-search-header">
+          <h4>Select an image</h4>
+          <button type="button" class="btn-close-search" onclick="closeImageSearch()">&times;</button>
+        </div>
+        <div class="image-search-loading" id="imageSearchLoading" style="display:none">
+          <div class="scan-spinner"></div>
+          <p>Searching for images...</p>
+        </div>
+        <div class="image-search-grid" id="imageSearchGrid"></div>
+      </div>
+
       <div class="form-divider"><span>Bottle Details</span></div>
 
       <div class="form-container">
@@ -565,6 +603,19 @@
             <span class="api-key-status" id="apiKeyStatus"></span>
             <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Save Key</button>
           </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>Import Collection</h3>
+          <p class="settings-desc">Import bottles from a CSV file (CellarTracker format supported). The CSV should have headers like Wine, Producer, Vintage, Type, Region, etc.</p>
+          <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.5rem;justify-content:flex-start">
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('csvFileInput').click()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;margin-right:4px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Import CSV File
+            </button>
+            <input type="file" id="csvFileInput" accept=".csv,.txt" style="display:none" onchange="handleCSVUpload(event)">
+          </div>
+          <div class="csv-import-status" id="csvImportStatus" style="display:none"></div>
         </div>
 
         <div class="settings-card">
