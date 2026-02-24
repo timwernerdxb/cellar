@@ -242,6 +242,7 @@
         <span class="filter-divider">|</span>
         <button class="filter-chip" data-filter="Tequila" onclick="setCellarFilter('Tequila', this)">Tequila</button>
         <button class="filter-chip" data-filter="Mezcal" onclick="setCellarFilter('Mezcal', this)">Mezcal</button>
+        <span class="filter-divider">|</span>
         <button class="filter-chip" data-filter="Rum" onclick="setCellarFilter('Rum', this)">Rum</button>
         <div class="filter-spacer"></div>
         <select class="sort-select" id="cellarSort" onchange="filterCellar()">
@@ -269,6 +270,7 @@
       <div class="category-toggle">
         <button class="cat-btn active" data-cat="wine" onclick="setAddCategory('wine', this)">Wine</button>
         <button class="cat-btn" data-cat="whiskey" onclick="setAddCategory('whiskey', this)">Whiskey</button>
+        <button class="cat-btn" data-cat="tequila" onclick="setAddCategory('tequila', this)">Tequila</button>
         <button class="cat-btn" data-cat="spirit" onclick="setAddCategory('spirit', this)">Spirit</button>
       </div>
 
@@ -402,10 +404,13 @@
                   <option value="Blended">Blended Whisky</option>
                   <option value="Tennessee">Tennessee Whiskey</option>
                 </optgroup>
-                <!-- Spirit types -->
-                <optgroup label="Spirits" id="optSpirits">
+                <!-- Tequila types -->
+                <optgroup label="Tequila" id="optTequila">
                   <option value="Tequila">Tequila</option>
                   <option value="Mezcal">Mezcal</option>
+                </optgroup>
+                <!-- Spirit types -->
+                <optgroup label="Spirits" id="optSpirits">
                   <option value="Rum">Rum</option>
                   <option value="Cognac">Cognac</option>
                   <option value="Brandy">Brandy</option>

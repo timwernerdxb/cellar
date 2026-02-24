@@ -10,13 +10,15 @@ const THEME_KEY = 'vino_theme';
 
 const WHISKEY_TYPES = ['Scotch', 'Bourbon', 'Irish', 'Japanese', 'Rye', 'Single Malt', 'Blended', 'Tennessee'];
 const WINE_TYPES = ['Red', 'White', 'Rosé', 'Sparkling', 'Dessert', 'Fortified'];
-const SPIRIT_TYPES = ['Tequila', 'Mezcal', 'Rum', 'Cognac', 'Brandy', 'Gin', 'Vodka', 'Other Spirit'];
+const TEQUILA_TYPES = ['Tequila', 'Mezcal'];
+const SPIRIT_TYPES = ['Rum', 'Cognac', 'Brandy', 'Gin', 'Vodka', 'Other Spirit'];
 const API_KEY_STORAGE = 'vino_openai_key';
 
 function isWhiskey(type) { return WHISKEY_TYPES.includes(type); }
 function isWine(type) { return WINE_TYPES.includes(type); }
-function isSpirit(type) { return SPIRIT_TYPES.includes(type) || WHISKEY_TYPES.includes(type); }
-function isSpiritOrWhiskey(type) { return isWhiskey(type) || SPIRIT_TYPES.includes(type); }
+function isTequila(type) { return TEQUILA_TYPES.includes(type); }
+function isSpirit(type) { return SPIRIT_TYPES.includes(type) || WHISKEY_TYPES.includes(type) || TEQUILA_TYPES.includes(type); }
+function isSpiritOrWhiskey(type) { return isWhiskey(type) || isTequila(type) || SPIRIT_TYPES.includes(type); }
 
 // ============ AUTH STATE ============
 
@@ -489,8 +491,8 @@ function parseCellarTrackerCSV() {
         else if (/tennessee/i.test(allText)) type = 'Tennessee';
         else type = 'Single Malt';
         category = 'whiskey';
-      } else if (/tequila|agave/i.test(allText)) { type = 'Tequila'; category = 'spirit'; }
-      else if (/mezcal/i.test(allText)) { type = 'Mezcal'; category = 'spirit'; }
+      } else if (/tequila|agave/i.test(allText)) { type = 'Tequila'; category = 'tequila'; }
+      else if (/mezcal/i.test(allText)) { type = 'Mezcal'; category = 'tequila'; }
       else if (/rum|ron\b/i.test(allText)) { type = 'Rum'; category = 'spirit'; }
       else if (/cognac/i.test(allText)) { type = 'Cognac'; category = 'spirit'; }
       else if (/brandy/i.test(allText)) { type = 'Brandy'; category = 'spirit'; }
@@ -646,7 +648,7 @@ let editingBottleId = null;
 
 // Ensure category field and market values
 cellar.forEach(w => {
-  if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : (isSpirit(w.type) ? 'spirit' : 'wine');
+  if (!w.category) w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine';
   if (!w.marketValue || w.marketValue <= 0) w.marketValue = estimateMarketValue(w);
 });
 
@@ -671,7 +673,7 @@ function setAddCategory(cat, btn) {
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 
-  const showSpirit = cat === 'whiskey' || cat === 'spirit';
+  const showSpirit = cat === 'whiskey' || cat === 'spirit' || cat === 'tequila';
   document.querySelectorAll('.whiskey-field').forEach(el => el.style.display = showSpirit ? '' : 'none');
   document.querySelectorAll('.wine-field').forEach(el => el.style.display = showSpirit ? 'none' : '');
 
@@ -679,7 +681,8 @@ function setAddCategory(cat, btn) {
   const labels = {
     wine: { producer: 'Producer / Winery', vintage: 'Vintage *', grape: 'Grape / Varietal', prodPH: 'e.g. Chateau Margaux', grapePH: 'e.g. Cabernet Sauvignon', regionPH: 'e.g. Bordeaux, France' },
     whiskey: { producer: 'Distillery / Producer', vintage: 'Bottling Year', grape: 'Grain / Mash Bill', prodPH: 'e.g. The Macallan', grapePH: 'e.g. Malted Barley', regionPH: 'e.g. Islay, Scotland' },
-    spirit: { producer: 'Producer / Brand', vintage: 'Bottling Year', grape: 'Base Ingredient', prodPH: 'e.g. Clase Azul', grapePH: 'e.g. Agave', regionPH: 'e.g. Jalisco, Mexico' },
+    tequila: { producer: 'Producer / Brand', vintage: 'Bottling Year', grape: 'Agave Type', prodPH: 'e.g. Clase Azul', grapePH: 'e.g. Blue Weber Agave', regionPH: 'e.g. Jalisco, Mexico' },
+    spirit: { producer: 'Producer / Brand', vintage: 'Bottling Year', grape: 'Base Ingredient', prodPH: 'e.g. Diplomatico', grapePH: 'e.g. Sugarcane', regionPH: 'e.g. Venezuela' },
   };
   const l = labels[cat] || labels.wine;
   document.getElementById('labelProducer').textContent = l.producer;
@@ -689,18 +692,15 @@ function setAddCategory(cat, btn) {
   document.getElementById('wineGrape').placeholder = l.grapePH;
   document.getElementById('wineRegion').placeholder = l.regionPH;
 
-  // Vintage/Year is required only for wine, optional for whiskey & spirits
+  // Vintage/Year is required only for wine, optional for whiskey, tequila & spirits
   const vintageInput = document.getElementById('wineVintage');
-  if (cat === 'wine') {
-    vintageInput.required = true;
-  } else {
-    vintageInput.required = false;
-  }
+  vintageInput.required = (cat === 'wine');
 
   // Auto-set first option of relevant optgroup
   const sel = document.getElementById('wineType');
   if (cat === 'whiskey') sel.value = 'Scotch';
-  else if (cat === 'spirit') sel.value = 'Tequila';
+  else if (cat === 'tequila') sel.value = 'Tequila';
+  else if (cat === 'spirit') sel.value = 'Rum';
   else sel.value = 'Red';
 }
 
@@ -846,8 +846,10 @@ function renderTypeChart() {
     // Whiskey
     Scotch: '#B8860B', Bourbon: '#D2691E', Irish: '#228B22', Japanese: '#C41E3A',
     Rye: '#8B4513', 'Single Malt': '#DAA520', Blended: '#A0522D', Tennessee: '#CD853F',
+    // Tequila
+    Tequila: '#2E86AB', Mezcal: '#567D2E',
     // Spirits
-    Tequila: '#2E86AB', Mezcal: '#567D2E', Rum: '#A0522D', Cognac: '#7B3F00',
+    Rum: '#A0522D', Cognac: '#7B3F00',
     Brandy: '#9B6B43', Gin: '#4682B4', Vodka: '#8FA8C8', 'Other Spirit': '#808080',
   };
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1073,7 +1075,7 @@ function addBottle(event) {
     notes: document.getElementById('wineNotes').value.trim(),
     addedDate: new Date().toISOString().split('T')[0],
     rating: null,
-    category: isWhiskey(type) ? 'whiskey' : (isSpirit(type) ? 'spirit' : 'wine'),
+    category: isWhiskey(type) ? 'whiskey' : isTequila(type) ? 'tequila' : SPIRIT_TYPES.includes(type) ? 'spirit' : 'wine',
     age: isSW ? (parseInt(document.getElementById('whiskeyAge').value) || null) : null,
     abv: isSW ? (parseFloat(document.getElementById('whiskeyAbv').value) || null) : null,
     currency: 'EUR',
@@ -1149,7 +1151,7 @@ function editBottle(id) {
   switchView('add');
 
   // Set category
-  const cat = w.category || (isWhiskey(w.type) ? 'whiskey' : (isSpirit(w.type) ? 'spirit' : 'wine'));
+  const cat = w.category || (isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine');
   const catBtn = document.querySelector(`[data-cat="${cat}"]`);
   if (catBtn) setAddCategory(cat, catBtn);
 
@@ -1724,7 +1726,7 @@ async function lookupBarcodeForFlow(code) {
         barcodeData.category = 'whiskey';
         barcodeData.type = allText.includes('bourbon') ? 'Bourbon' : allText.includes('scotch') ? 'Scotch' : 'Single Malt';
       } else if (/tequila|mezcal|agave/.test(allText)) {
-        barcodeData.category = 'spirit'; barcodeData.type = allText.includes('mezcal') ? 'Mezcal' : 'Tequila';
+        barcodeData.category = 'tequila'; barcodeData.type = allText.includes('mezcal') ? 'Mezcal' : 'Tequila';
       } else if (/\brum\b/.test(allText)) { barcodeData.category = 'spirit'; barcodeData.type = 'Rum'; }
       else if (/cognac|brandy/.test(allText)) { barcodeData.category = 'spirit'; barcodeData.type = allText.includes('cognac') ? 'Cognac' : 'Brandy'; }
       else if (/\bgin\b/.test(allText)) { barcodeData.category = 'spirit'; barcodeData.type = 'Gin'; }
@@ -1867,7 +1869,7 @@ function parseOpenFoodFactsProduct(p) {
     else type = 'Blended';
     category = 'whiskey';
   } else if (isTequilaOrMezcal) {
-    type = allText.includes('mezcal') ? 'Mezcal' : 'Tequila'; category = 'spirit';
+    type = allText.includes('mezcal') ? 'Mezcal' : 'Tequila'; category = 'tequila';
   } else if (isRum) { type = 'Rum'; category = 'spirit'; }
   else if (isCognac) { type = allText.includes('cognac') ? 'Cognac' : 'Brandy'; category = 'spirit'; }
   else if (isGin) { type = 'Gin'; category = 'spirit'; }
@@ -1941,7 +1943,7 @@ async function processLabelImage(dataUrl) {
   "producer": "producer/brand/distillery/winery",
   "vintage": year as number or null,
   "type": one of "Red","White","Rosé","Sparkling","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Rum","Cognac","Brandy","Gin","Other Spirit",
-  "category": "wine" or "whiskey" or "spirit",
+  "category": "wine" or "whiskey" or "tequila" or "spirit",
   "grape": "grape varietal" or null,
   "region": "region, country",
   "age": age statement as number or null,
@@ -2040,16 +2042,10 @@ function showScanResults(extracted) {
 function populateFormFromScan(data) {
   // Auto-switch category
   const cat = data.category || 'wine';
-  if (cat === 'whiskey') {
-    const btn = document.querySelector('[data-cat="whiskey"]');
-    if (btn) setAddCategory('whiskey', btn);
-  } else if (cat === 'spirit') {
-    const btn = document.querySelector('[data-cat="spirit"]');
-    if (btn) setAddCategory('spirit', btn);
-  } else {
-    const btn = document.querySelector('[data-cat="wine"]');
-    if (btn) setAddCategory('wine', btn);
-  }
+  const validCats = ['wine', 'whiskey', 'tequila', 'spirit'];
+  const effectiveCat = validCats.includes(cat) ? cat : 'wine';
+  const btn = document.querySelector(`[data-cat="${effectiveCat}"]`);
+  if (btn) setAddCategory(effectiveCat, btn);
 
   if (data.name) document.getElementById('wineName').value = data.name;
   if (data.producer) document.getElementById('wineProducer').value = data.producer;
@@ -2388,8 +2384,8 @@ function parseCSVToBottles(headers, lines) {
         else if (/tennessee/i.test(allText)) type = 'Tennessee';
         else type = 'Single Malt';
         category = 'whiskey';
-      } else if (/tequila|agave/i.test(allText)) { type = 'Tequila'; category = 'spirit'; }
-      else if (/mezcal/i.test(allText)) { type = 'Mezcal'; category = 'spirit'; }
+      } else if (/tequila|agave/i.test(allText)) { type = 'Tequila'; category = 'tequila'; }
+      else if (/mezcal/i.test(allText)) { type = 'Mezcal'; category = 'tequila'; }
       else if (/\brum\b|\bron\b/i.test(allText)) { type = 'Rum'; category = 'spirit'; }
       else if (/cognac/i.test(allText)) { type = 'Cognac'; category = 'spirit'; }
       else if (/brandy/i.test(allText)) { type = 'Brandy'; category = 'spirit'; }
