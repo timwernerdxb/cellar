@@ -1,9 +1,8 @@
 CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  google_id     TEXT UNIQUE NOT NULL,
   email         TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
   name          TEXT,
-  picture       TEXT,
   openai_key    TEXT,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   updated_at    TIMESTAMPTZ DEFAULT NOW()

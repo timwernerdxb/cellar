@@ -22,7 +22,7 @@ function isSpiritOrWhiskey(type) { return isWhiskey(type) || SPIRIT_TYPES.includ
 
 let currentUser = null;
 let syncTimer = null;
-let authProviders = { google: true, apple: false };
+let authMode = 'login'; // 'login' or 'register'
 
 async function checkAuthState() {
   try {
@@ -43,33 +43,90 @@ async function checkAuthState() {
     currentUser = null; // offline or no server
   }
   updateAuthUI();
-  // Fetch provider config
-  try {
-    const pResp = await fetch('/api/auth/providers');
-    if (pResp.ok) authProviders = await pResp.json();
-  } catch {}
-  updateAuthUI();
 }
 
 function updateAuthUI() {
   const loginSection = document.getElementById('authLogin');
   const userSection = document.getElementById('authUser');
-  const googleBtn = document.getElementById('authGoogleBtn');
-  const appleBtn = document.getElementById('authAppleBtn');
   if (!loginSection || !userSection) return;
 
   if (currentUser) {
     loginSection.style.display = 'none';
     userSection.style.display = 'flex';
-    document.getElementById('authName').textContent = currentUser.name || currentUser.email;
-    const avatar = document.getElementById('authAvatar');
-    if (currentUser.picture) { avatar.src = currentUser.picture; avatar.style.display = 'block'; }
-    else avatar.style.display = 'none';
+    document.getElementById('authUserName').textContent = currentUser.name || currentUser.email;
   } else {
     loginSection.style.display = 'block';
     userSection.style.display = 'none';
-    if (googleBtn) googleBtn.style.display = authProviders.google ? 'flex' : 'none';
-    if (appleBtn) appleBtn.style.display = authProviders.apple ? 'flex' : 'none';
+  }
+}
+
+function toggleAuthMode(e) {
+  e.preventDefault();
+  const nameField = document.getElementById('authName');
+  const submitBtn = document.getElementById('authSubmitBtn');
+  const toggleText = document.getElementById('authToggleText');
+  const toggleLink = document.getElementById('authToggleLink');
+  const errorEl = document.getElementById('authError');
+  errorEl.style.display = 'none';
+
+  if (authMode === 'login') {
+    authMode = 'register';
+    nameField.style.display = 'block';
+    submitBtn.textContent = 'Create account';
+    toggleText.textContent = 'Have an account?';
+    toggleLink.textContent = 'Sign in';
+  } else {
+    authMode = 'login';
+    nameField.style.display = 'none';
+    submitBtn.textContent = 'Sign in';
+    toggleText.textContent = 'No account?';
+    toggleLink.textContent = 'Sign up';
+  }
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const name = document.getElementById('authName').value.trim();
+  const errorEl = document.getElementById('authError');
+  const submitBtn = document.getElementById('authSubmitBtn');
+  errorEl.style.display = 'none';
+  submitBtn.disabled = true;
+  submitBtn.textContent = authMode === 'login' ? 'Signing in...' : 'Creating account...';
+
+  try {
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const body = authMode === 'login' ? { email, password } : { email, password, name };
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errorEl.textContent = data.error || 'Something went wrong';
+      errorEl.style.display = 'block';
+      return;
+    }
+    currentUser = data;
+    updateAuthUI();
+    showToast(`Welcome${currentUser.name ? ', ' + currentUser.name : ''}!`);
+    document.getElementById('authForm').reset();
+    // Sync
+    if (cellar.length > 0 && !localStorage.getItem('vino_synced')) {
+      showSyncPrompt();
+    } else {
+      await syncFromServer();
+    }
+    renderDashboard();
+  } catch (err) {
+    errorEl.textContent = 'Connection error — try again';
+    errorEl.style.display = 'block';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = authMode === 'login' ? 'Sign in' : 'Create account';
   }
 }
 
@@ -531,11 +588,6 @@ function initTheme() {
 initTheme();
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Clean up OAuth redirect hash
-  if (window.location.hash === '#authenticated') {
-    history.replaceState(null, '', '/');
-  }
-
   renderDashboard();
   renderCellar();
   renderTastingWines();

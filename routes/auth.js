@@ -1,72 +1,28 @@
 const router = require('express').Router();
-const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { authRequired } = require('../middleware/auth');
 
-// Conditionally load Apple strategy
-let AppleStrategy;
-try { AppleStrategy = require('passport-apple'); } catch { /* not installed or not configured */ }
-
-// ---- Google OAuth ----
-if (process.env.GOOGLE_CLIENT_ID) {
-  passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: process.env.GOOGLE_CALLBACK_URL,
-  }, (accessToken, refreshToken, profile, done) => {
-    done(null, {
-      provider: 'google',
-      providerId: profile.id,
-      email: profile.emails?.[0]?.value,
-      name: profile.displayName,
-      picture: profile.photos?.[0]?.value,
-    });
-  }));
-}
-
-// ---- Apple Sign In ----
-if (AppleStrategy && process.env.APPLE_CLIENT_ID) {
-  passport.use(new AppleStrategy({
-    clientID: process.env.APPLE_CLIENT_ID,
-    teamID: process.env.APPLE_TEAM_ID,
-    keyID: process.env.APPLE_KEY_ID,
-    privateKeyString: (process.env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    callbackURL: process.env.APPLE_CALLBACK_URL,
-    scope: ['name', 'email'],
-  }, (accessToken, refreshToken, idToken, profile, done) => {
-    done(null, {
-      provider: 'apple',
-      providerId: profile.id || idToken?.sub,
-      email: profile.email || idToken?.email,
-      name: profile.name ? `${profile.name.firstName || ''} ${profile.name.lastName || ''}`.trim() : null,
-      picture: null,
-    });
-  }));
-}
-
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((user, done) => done(null, user));
-
-router.use(passport.initialize());
-
-// Shared: upsert user + issue JWT cookie + redirect
-async function handleAuthCallback(req, res) {
+// Register
+router.post('/register', async (req, res) => {
   try {
     const pool = req.app.locals.pool;
-    const { provider, providerId, email, name, picture } = req.user;
+    const { email, password, name } = req.body;
 
-    // Use email as unique key (works across providers)
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    // Check if email already exists
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already registered' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
     const result = await pool.query(
-      `INSERT INTO users (google_id, email, name, picture)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (email) DO UPDATE SET
-         name = COALESCE(NULLIF($3, ''), users.name),
-         picture = COALESCE($4, users.picture),
-         google_id = COALESCE($1, users.google_id),
-         updated_at = NOW()
-       RETURNING id, email, name, picture`,
-      [`${provider}:${providerId}`, email, name, picture]
+      `INSERT INTO users (email, name, password_hash)
+       VALUES ($1, $2, $3)
+       RETURNING id, email, name`,
+      [email.toLowerCase().trim(), name || null, passwordHash]
     );
     const user = result.rows[0];
 
@@ -83,33 +39,57 @@ async function handleAuthCallback(req, res) {
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
-    res.redirect('/#authenticated');
+    res.json({ id: user.id, email: user.email, name: user.name });
   } catch (err) {
-    console.error('Auth callback error:', err);
-    res.redirect('/?auth=error');
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
-}
+});
 
-// Google routes
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false }));
-router.get('/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: '/?auth=failed' }),
-  handleAuthCallback
-);
+// Login
+router.post('/login', async (req, res) => {
+  try {
+    const pool = req.app.locals.pool;
+    const { email, password } = req.body;
 
-// Apple routes (POST callback — Apple sends form data)
-router.get('/apple', passport.authenticate('apple', { session: false }));
-router.post('/apple/callback',
-  passport.authenticate('apple', { session: false, failureRedirect: '/?auth=failed' }),
-  handleAuthCallback
-);
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+
+    const result = await pool.query(
+      'SELECT id, email, name, password_hash FROM users WHERE email = $1',
+      [email.toLowerCase().trim()]
+    );
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
+
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({ id: user.id, email: user.email, name: user.name });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // Get current user
 router.get('/me', authRequired, async (req, res) => {
   try {
     const pool = req.app.locals.pool;
     const result = await pool.query(
-      'SELECT id, email, name, picture FROM users WHERE id = $1',
+      'SELECT id, email, name FROM users WHERE id = $1',
       [req.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -118,14 +98,6 @@ router.get('/me', authRequired, async (req, res) => {
     console.error('Get user error:', err);
     res.status(500).json({ error: 'Server error' });
   }
-});
-
-// Check which auth providers are configured
-router.get('/providers', (req, res) => {
-  res.json({
-    google: !!process.env.GOOGLE_CLIENT_ID,
-    apple: !!process.env.APPLE_CLIENT_ID,
-  });
 });
 
 // Logout

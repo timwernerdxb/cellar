@@ -9,14 +9,12 @@
     "db:migrate": "node db/migrate.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
-    "passport": "^0.7.0",
-    "passport-apple": "^2.0.0",
-    "passport-google-oauth20": "^2.0.0",
     "pg": "^8.13.1"
   },
   "engines": {

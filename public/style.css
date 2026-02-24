@@ -1630,39 +1630,74 @@ input, select, textarea, button {
   margin-top: 0.5rem;
 }
 
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.auth-input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.auth-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.auth-error {
+  font-size: 0.72rem;
+  color: #d32f2f;
+  margin: 0;
+  text-align: center;
+}
+
 .btn-auth {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.75rem;
+  justify-content: center;
+  padding: 0.5rem 0.75rem;
   border-radius: var(--radius-xs);
   font-size: 0.82rem;
   font-weight: 500;
-  text-decoration: none;
-  transition: background 0.15s;
-  margin-bottom: 0.4rem;
   cursor: pointer;
-  border: 1px solid var(--border);
+  border: none;
+  transition: background 0.15s;
+  font-family: inherit;
 }
 
-.btn-google {
-  background: var(--bg);
-  color: var(--text);
-}
-.btn-google:hover { background: var(--bg-hover); }
-
-.btn-apple {
-  background: #000;
+.btn-login {
+  background: var(--accent);
   color: #fff;
-  border-color: #333;
+  margin-top: 0.2rem;
 }
-.btn-apple:hover { background: #222; }
+.btn-login:hover { opacity: 0.9; }
+
+.auth-toggle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0.25rem 0 0;
+}
+.auth-toggle a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.auth-toggle a:hover { text-decoration: underline; }
 
 .auth-hint {
   font-size: 0.72rem;
   color: var(--text-muted);
   text-align: center;
-  margin-top: 0.25rem;
+  margin-top: 0.5rem;
 }
 
 #authUser {
@@ -1670,12 +1705,6 @@ input, select, textarea, button {
   flex-direction: column;
   align-items: center;
   gap: 0.4rem;
-}
-
-.auth-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
 }
 
 .auth-name {
