@@ -260,6 +260,8 @@ async function syncFromServer() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cellar));
     localStorage.setItem(TASTINGS_KEY, JSON.stringify(tastings));
     localStorage.setItem('vino_last_sync', new Date().toISOString());
+    // Run migrations on freshly downloaded data (fix values, currency, etc.)
+    runMigrations();
     renderDashboard(); renderCellar();
   } catch (err) {
     console.warn('Sync from server failed:', err.message);
@@ -662,28 +664,29 @@ let editingBottleId = null;
 
 // Data starts empty — loaded from server after login
 
-// Ensure category, status, and market values on all bottles
-let _migrationDirty = false;
-cellar.forEach(w => {
-  if (!w.category) { w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : isSake(w.type) ? 'sake' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine'; _migrationDirty = true; }
-  if (!w.status) { w.status = 'active'; _migrationDirty = true; }
-  if (!w.consumptionHistory) { w.consumptionHistory = []; _migrationDirty = true; }
-  // Re-estimate market values for non-CSV bottles (no ctId = added via scan/manual)
-  // CSV bottles keep their CellarTracker values; scan/manual bottles get fresh estimates
-  if (!w.ctId) {
-    const oldMv = w.marketValue;
-    w.marketValue = 0; // Clear so estimateMarketValue doesn't short-circuit
-    const newVal = estimateMarketValue(w);
-    w.marketValue = newVal;
-    if (newVal !== oldMv) _migrationDirty = true;
-  } else if (!w.marketValue || w.marketValue <= 0) {
-    w.marketValue = estimateMarketValue(w);
-    _migrationDirty = true;
-  }
-  // Migrate currency to USD
-  if (w.currency === 'EUR') { w.currency = 'USD'; _migrationDirty = true; }
-});
-if (_migrationDirty && cellar.length > 0) saveCellar(cellar);
+// Data migration — runs after every data load (initial + server sync)
+function runMigrations() {
+  let dirty = false;
+  cellar.forEach(w => {
+    if (!w.category) { w.category = isWhiskey(w.type) ? 'whiskey' : isTequila(w.type) ? 'tequila' : isSake(w.type) ? 'sake' : SPIRIT_TYPES.includes(w.type) ? 'spirit' : 'wine'; dirty = true; }
+    if (!w.status) { w.status = 'active'; dirty = true; }
+    if (!w.consumptionHistory) { w.consumptionHistory = []; dirty = true; }
+    // Re-estimate market values for non-CSV bottles (no ctId = added via scan/manual)
+    if (!w.ctId) {
+      const oldMv = w.marketValue;
+      w.marketValue = 0; // Clear so estimateMarketValue doesn't short-circuit
+      w.marketValue = estimateMarketValue(w);
+      if (w.marketValue !== oldMv) dirty = true;
+    } else if (!w.marketValue || w.marketValue <= 0) {
+      w.marketValue = estimateMarketValue(w);
+      dirty = true;
+    }
+    // Migrate currency to USD
+    if (w.currency === 'EUR') { w.currency = 'USD'; dirty = true; }
+  });
+  if (dirty && cellar.length > 0) saveCellar(cellar);
+}
+runMigrations();
 
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
