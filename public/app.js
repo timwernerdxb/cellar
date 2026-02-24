@@ -51,6 +51,16 @@ async function enterApp() {
   updateAuthUI();
   // Load data from server
   await syncFromServer();
+  // Load API key from server if not in localStorage
+  try {
+    const resp = await fetch('/api/settings', { credentials: 'include' });
+    if (resp.ok) {
+      const settings = await resp.json();
+      if (settings.openaiKey) {
+        localStorage.setItem(API_KEY_STORAGE, settings.openaiKey);
+      }
+    }
+  } catch {}
   switchView('dashboard');
 }
 
@@ -1917,12 +1927,23 @@ function showToast(msg) {
 
 // ============ SETTINGS ============
 
-function saveApiKey() {
+async function saveApiKey() {
   const input = document.getElementById('apiKeyInput');
   const key = input.value.trim();
   if (!key) { showToast('Please enter an API key'); return; }
   localStorage.setItem(API_KEY_STORAGE, key);
-  showToast('API key saved securely in browser');
+  // Also save to server if logged in
+  if (currentUser) {
+    try {
+      await fetch('/api/settings/openai-key', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ key }),
+      });
+    } catch {}
+  }
+  showToast('API key saved');
   updateApiKeyStatus();
 }
 
