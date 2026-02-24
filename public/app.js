@@ -855,27 +855,37 @@ function getDrinkStatus(w) {
   return { class: 'ready', label: 'Ready' };
 }
 
+function isMobileView() { return window.innerWidth <= 768; }
+
+// Re-render charts on orientation/resize change (debounced)
+let _resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (document.getElementById('view-dashboard')?.classList.contains('active')) {
+      renderTypeChart(); renderRegionChart(); renderCategoryChart();
+    }
+  }, 300);
+});
+
 function renderTypeChart() {
   const ctx = document.getElementById('typeChart');
   if (typeChartInstance) typeChartInstance.destroy();
   const types = {};
   cellar.filter(w => w.status !== 'consumed').forEach(w => { types[w.type] = (types[w.type] || 0) + (parseInt(w.quantity) || 1); });
-  // Sort by count descending
   const sorted = Object.entries(types).sort((a, b) => b[1] - a[1]);
   const colors = {
-    // Wine
     Red: '#8B1A1A', White: '#C9A96E', 'Rosé': '#E8A0BF', Sparkling: '#7FB3D3',
-    Dessert: '#D4A574', Fortified: '#6C3483',
-    // Whiskey
+    Champagne: '#D4AF37', Dessert: '#D4A574', Fortified: '#6C3483',
     Scotch: '#B8860B', Bourbon: '#D2691E', Irish: '#228B22', Japanese: '#C41E3A',
     Rye: '#8B4513', 'Single Malt': '#DAA520', Blended: '#A0522D', Tennessee: '#CD853F',
-    // Tequila
     Tequila: '#2E86AB', Mezcal: '#567D2E',
-    // Spirits
+    Junmai: '#C45B28', Ginjo: '#E07B39', Daiginjo: '#D4A574', Nigori: '#F5DEB3', 'Sparkling Sake': '#7FB3D3', Sake: '#C9A96E',
     Rum: '#A0522D', Cognac: '#7B3F00',
     Brandy: '#9B6B43', Gin: '#4682B4', Vodka: '#8FA8C8', 'Other Spirit': '#808080',
   };
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const mobile = isMobileView();
   typeChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
@@ -889,11 +899,17 @@ function renderTypeChart() {
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      responsive: true, maintainAspectRatio: false, cutout: mobile ? '55%' : '62%',
       plugins: {
         legend: {
-          position: 'right',
-          labels: { padding: 12, usePointStyle: true, pointStyleWidth: 10, color: isDark ? '#A8A4A0' : '#6B6560', font: { family: 'DM Sans', size: 11 } }
+          position: mobile ? 'bottom' : 'right',
+          labels: {
+            padding: mobile ? 8 : 12,
+            usePointStyle: true,
+            pointStyleWidth: mobile ? 8 : 10,
+            color: isDark ? '#A8A4A0' : '#6B6560',
+            font: { family: 'DM Sans', size: mobile ? 10 : 11 }
+          }
         },
         tooltip: {
           callbacks: {
@@ -910,19 +926,28 @@ function renderRegionChart() {
   if (regionChartInstance) regionChartInstance.destroy();
   const regions = {};
   cellar.filter(w => w.status !== 'consumed').forEach(w => { const r = (w.region || 'Unknown').split(',')[0].trim(); regions[r] = (regions[r] || 0) + (parseInt(w.quantity) || 1); });
-  const sorted = Object.entries(regions).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const mobile = isMobileView();
+  const maxRegions = mobile ? 7 : 10;
+  const sorted = Object.entries(regions).sort((a, b) => b[1] - a[1]).slice(0, maxRegions);
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  // Gradient palette for bars
   const barPalette = ['#8B1A1A', '#B8860B', '#2E86AB', '#6C3483', '#228B22', '#C41E3A', '#D2691E', '#4682B4', '#567D2E', '#9B6B43'];
+
+  // Dynamically set container height based on number of bars
+  const chartWrap = ctx.closest('.chart-wrap');
+  if (chartWrap) {
+    const barH = mobile ? 28 : 32;
+    chartWrap.style.height = Math.max(120, sorted.length * barH + 40) + 'px';
+  }
+
   regionChartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: sorted.map(s => s[0]),
+      labels: sorted.map(s => mobile && s[0].length > 12 ? s[0].slice(0, 11) + '…' : s[0]),
       datasets: [{
         data: sorted.map(s => s[1]),
         backgroundColor: sorted.map((_, i) => barPalette[i % barPalette.length] + (isDark ? 'CC' : 'BB')),
         borderRadius: 4,
-        barThickness: 22,
+        barThickness: mobile ? 16 : 22,
       }]
     },
     options: {
@@ -938,11 +963,14 @@ function renderRegionChart() {
       scales: {
         x: {
           grid: { color: isDark ? '#2A2A30' : '#E8E4DE' },
-          ticks: { color: isDark ? '#9B9590' : '#6B6560', font: { family: 'DM Sans', size: 11 }, stepSize: 1 }
+          ticks: { color: isDark ? '#9B9590' : '#6B6560', font: { family: 'DM Sans', size: mobile ? 9 : 11 }, stepSize: 1 }
         },
         y: {
           grid: { display: false },
-          ticks: { color: isDark ? '#A8A4A0' : '#6B6560', font: { family: 'DM Sans', size: 11 } }
+          ticks: {
+            color: isDark ? '#A8A4A0' : '#6B6560',
+            font: { family: 'DM Sans', size: mobile ? 10 : 11 },
+          }
         }
       }
     }
@@ -967,6 +995,7 @@ function renderCategoryChart() {
   Object.keys(cats).forEach(k => { if (cats[k] === 0) delete cats[k]; });
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Sake: '#C45B28', Spirit: '#6C3483' };
+  const mobile = isMobileView();
   categoryChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
@@ -980,11 +1009,17 @@ function renderCategoryChart() {
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: '70%',
+      responsive: true, maintainAspectRatio: false, cutout: mobile ? '55%' : '70%',
       plugins: {
         legend: {
           position: 'bottom',
-          labels: { padding: 14, usePointStyle: true, pointStyleWidth: 10, color: isDark ? '#A8A4A0' : '#6B6560', font: { family: 'DM Sans', size: 12 } }
+          labels: {
+            padding: mobile ? 8 : 14,
+            usePointStyle: true,
+            pointStyleWidth: mobile ? 8 : 10,
+            color: isDark ? '#A8A4A0' : '#6B6560',
+            font: { family: 'DM Sans', size: mobile ? 10 : 12 }
+          }
         },
         tooltip: {
           callbacks: {

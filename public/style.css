@@ -2236,22 +2236,27 @@ body.no-auth .main-content { margin-left: 0; }
     grid-column: 1 / -1;
   }
 
-  /* Charts — shorter on mobile */
+  /* Charts on mobile — legends move to bottom so need more vertical space */
+  .charts-row, .charts-row-3 {
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
   .chart-card {
-    padding: 1rem;
+    padding: 0.85rem;
   }
 
   .chart-card h3 {
-    font-size: 0.88rem;
-    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
   }
 
   .chart-wrap {
-    height: 170px;
+    height: 220px;
   }
 
   .chart-wrap-sm {
-    height: 150px;
+    height: 200px;
   }
 
   /* Section cards — tighter */
@@ -2354,22 +2359,27 @@ body.no-auth .main-content { margin-left: 0; }
     display: block;
   }
 
-  /* Charts even shorter */
+  /* Charts — keep reasonable height for bottom legends */
   .charts-row, .charts-row-3 {
-    gap: 0.75rem;
-    margin-bottom: 1.25rem;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
   }
 
   .chart-wrap {
-    height: 150px;
+    height: 200px;
   }
 
   .chart-wrap-sm {
-    height: 130px;
+    height: 180px;
   }
 
   .chart-card {
-    padding: 0.75rem;
+    padding: 0.65rem;
+  }
+
+  .chart-card h3 {
+    font-size: 0.8rem;
+    margin-bottom: 0.3rem;
   }
 
   /* Section cards */
