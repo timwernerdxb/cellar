@@ -755,6 +755,7 @@ function renderDashboard() {
     return now >= from && now <= until;
   }).reduce((s, w) => s + (parseInt(w.quantity) || 0), 0);
   const totalValue = activeCellar.reduce((s, w) => s + (w.marketValue || 0) * (parseInt(w.quantity) || 1), 0);
+  const totalValueAll = cellar.reduce((s, w) => s + (w.marketValue || 0) * Math.max(parseInt(w.quantity) || 1, 1), 0);
   const consumedCount = cellar.reduce((s, w) => s + ((w.consumptionHistory || []).length), 0);
 
   // Dynamic greeting
@@ -767,7 +768,8 @@ function renderDashboard() {
   animateValue('totalBottles', totalBottles);
   document.getElementById('avgRating').textContent = avgRating;
   animateValue('readyToDrink', readyCount);
-  document.getElementById('totalValue').textContent = '€' + Math.round(totalValue).toLocaleString();
+  const valueEl = document.getElementById('totalValue');
+  valueEl.innerHTML = '€' + Math.round(totalValue).toLocaleString() + (totalValueAll > totalValue ? ` <span class="value-total-incl">(€${Math.round(totalValueAll).toLocaleString()})</span>` : '');
   const consumedEl = document.getElementById('consumedCount');
   if (consumedEl) consumedEl.textContent = consumedCount;
 
