@@ -782,9 +782,54 @@ async function runBatchScoring() {
   saveCellar(cellar);
   renderCellar();
   renderDashboard();
-  if (statusEl) statusEl.textContent = `Done! Scored ${scored}/${total} bottles.`;
+
+  // Also score finds that don't have scores
+  const unscoredFinds = restaurantFinds.filter(f => !f.communityScore && f.name);
+  if (unscoredFinds.length > 0) {
+    if (statusEl) statusEl.textContent = `Now scoring ${unscoredFinds.length} restaurant finds...`;
+    let findScored = 0;
+    for (let i = 0; i < unscoredFinds.length; i += batchSize) {
+      const batch = unscoredFinds.slice(i, i + batchSize);
+      const prompt = batch.map((f, idx) => {
+        const parts = [f.name, f.producer, f.type, f.region, f.vintage ? `${f.vintage}` : null, f.grape].filter(Boolean);
+        return `${idx + 1}. ${parts.join(' | ')}`;
+      }).join('\n');
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: `For each wine/spirit below, estimate a critic score out of 100 based on known reviews (Wine Spectator, CellarTracker, Vivino, etc.) or your best estimate based on the producer's reputation and quality tier. Return ONLY a JSON array of numbers (scores), one per item, in the same order. If you cannot estimate, use null.\n\n${prompt}` }],
+            max_tokens: 300, temperature: 0.1,
+          })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          const jsonMatch = content.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            const scores = JSON.parse(jsonMatch[0]);
+            batch.forEach((f, idx) => {
+              const score = scores[idx];
+              if (score && typeof score === 'number' && score >= 1 && score <= 100) {
+                f.communityScore = Math.round(score);
+                findScored++;
+              }
+            });
+          }
+        }
+      } catch (err) { console.error('Find batch scoring error:', err); }
+      if (i + batchSize < unscoredFinds.length) await new Promise(r => setTimeout(r, 500));
+    }
+    saveFinds(restaurantFinds);
+    renderFinds();
+    scored += findScored;
+  }
+
+  if (statusEl) statusEl.textContent = `Done! Scored ${scored}/${total + (unscoredFinds?.length || 0)}.`;
   if (btn) btn.disabled = false;
-  showToast(`Estimated scores for ${scored} bottles`);
+  showToast(`Estimated scores for ${scored} items`);
 }
 
 function initTheme() {
