@@ -1224,8 +1224,8 @@ function renderCellar() {
 
     const isConsumed = w.status === 'consumed';
 
-    // Rating badge: show rating if available
-    const ratingBadge = w.rating ? `<span class="card-badge-rating">${w.rating}<span class="card-badge-rating-max">/5</span></span>` : '';
+    // Critic score badge (top left): show community/critic score if available
+    const ratingBadge = w.communityScore ? `<span class="card-badge-rating">${Math.round(w.communityScore)}<span class="card-badge-rating-max">/100</span></span>` : '';
     // Location badge
     const locBadge = w.location ? `<span class="card-badge-location"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>${escHTML(w.location)}</span>` : '';
 
@@ -1355,6 +1355,7 @@ function addBottle(event) {
     notes: document.getElementById('wineNotes').value.trim(),
     addedDate: new Date().toISOString().split('T')[0],
     rating: null,
+    communityScore: pendingScanRating || null,
     category: isWhiskey(type) ? 'whiskey' : isTequila(type) ? 'tequila' : isSake(type) ? 'sake' : SPIRIT_TYPES.includes(type) ? 'spirit' : 'wine',
     age: isSW ? (parseInt(document.getElementById('whiskeyAge').value) || null) : null,
     abv: isSW ? (parseFloat(document.getElementById('whiskeyAbv').value) || null) : null,
@@ -1375,7 +1376,7 @@ function addBottle(event) {
       bottle.consumptionHistory = existing.consumptionHistory || [];
       bottle.consumedDate = existing.consumedDate;
       bottle.ctId = existing.ctId;
-      bottle.communityScore = existing.communityScore;
+      bottle.communityScore = bottle.communityScore || existing.communityScore;
       bottle.communityNotes = existing.communityNotes;
       bottle.personalScore = existing.personalScore;
       bottle.masterVarietal = existing.masterVarietal;
@@ -1422,6 +1423,7 @@ function addBottle(event) {
   document.getElementById('addWineForm').reset();
   document.getElementById('wineQuantity').value = 1;
   pendingBottleImage = null;
+  pendingScanRating = null;
   removeBottleImage();
   switchView('cellar');
 }
@@ -1881,11 +1883,12 @@ async function processLabelImage(dataUrl) {
   "designation": "special designation/edition" or null,
   "size": "bottle size" or "750ml",
   "price": estimated retail price in USD as number or null,
+  "criticScore": estimated critic/community score out of 100 (based on known reviews, reputation — e.g. Wine Spectator, CellarTracker, Vivino) as number or null,
   "drinkFrom": earliest recommended drinking year or null,
   "drinkUntil": latest recommended drinking year or null,
   "notes": "brief tasting profile/description (2-3 sentences from your knowledge)" or null
 }
-Use your knowledge to estimate price, drinking window, grape/rice variety, tasting notes, and any other fields not visible on the label.` },
+Use your knowledge to estimate price, critic score, drinking window, grape/rice variety, tasting notes, and any other fields not visible on the label.` },
             { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }
           ]
         }],
@@ -1991,6 +1994,8 @@ function populateFormFromScan(data) {
   if (data.age) document.getElementById('whiskeyAge').value = data.age;
   if (data.abv) document.getElementById('whiskeyAbv').value = data.abv;
   if (data.notes) document.getElementById('wineNotes').value = data.notes;
+  // Store AI-estimated critic score (out of 100)
+  pendingScanRating = data.criticScore ? Math.min(100, Math.max(1, Math.round(data.criticScore))) : null;
 
   document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -2013,6 +2018,39 @@ function showToast(msg) {
 
 // ============ RESTAURANT FINDS ============
 
+let findsLocationFilter = ''; // '' = all, or 'City, CC' string
+
+function getFindsLocationLabel(f) {
+  // Build display: "City, CC" format
+  if (f.locationCity && f.locationCountry) return `${f.locationCity}, ${f.locationCountry}`;
+  if (f.locationCity) return f.locationCity;
+  if (f.locationCountry) return f.locationCountry;
+  // Fallback: try to extract from old locationName
+  if (f.locationName) return f.locationName;
+  return '';
+}
+
+function renderFindsLocationFilter() {
+  const container = document.getElementById('findsLocationFilter');
+  if (!container) return;
+  // Collect unique locations
+  const locs = new Set();
+  restaurantFinds.forEach(f => {
+    const loc = getFindsLocationLabel(f);
+    if (loc) locs.add(loc);
+  });
+  if (locs.size === 0) { container.style.display = 'none'; return; }
+  container.style.display = 'flex';
+  const sorted = [...locs].sort();
+  container.innerHTML = `<button class="finds-loc-btn${!findsLocationFilter ? ' active' : ''}" onclick="setFindsLocationFilter('')">All</button>` +
+    sorted.map(loc => `<button class="finds-loc-btn${findsLocationFilter === loc ? ' active' : ''}" onclick="setFindsLocationFilter('${escHTML(loc)}')">${escHTML(loc)}</button>`).join('');
+}
+
+function setFindsLocationFilter(loc) {
+  findsLocationFilter = loc;
+  renderFinds();
+}
+
 function renderFinds() {
   const search = (document.getElementById('findsSearch')?.value || '').toLowerCase();
   let finds = [...restaurantFinds];
@@ -2022,12 +2060,22 @@ function renderFinds() {
       (f.producer || '').toLowerCase().includes(search) ||
       (f.region || '').toLowerCase().includes(search) ||
       (f.locationName || '').toLowerCase().includes(search) ||
+      (f.locationCity || '').toLowerCase().includes(search) ||
+      (f.locationCountry || '').toLowerCase().includes(search) ||
       (f.type || '').toLowerCase().includes(search)
     );
+  }
+  // Filter by location
+  if (findsLocationFilter) {
+    finds = finds.filter(f => getFindsLocationLabel(f) === findsLocationFilter);
   }
   finds.sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || ''));
   const countEl = document.getElementById('findsCount');
   if (countEl) countEl.textContent = finds.length + ' find' + (finds.length !== 1 ? 's' : '');
+
+  // Render location filter pills
+  renderFindsLocationFilter();
+
   const grid = document.getElementById('findsGrid');
   if (!grid) return;
 
@@ -2041,6 +2089,7 @@ function renderFinds() {
   }
 
   grid.innerHTML = finds.map(f => {
+    const locLabel = getFindsLocationLabel(f);
     return `
       <div class="find-card find-card-compact" onclick="openFindModal('${f.id}')">
         <div class="find-card-body">
@@ -2049,10 +2098,9 @@ function renderFinds() {
           <div class="find-card-details">
             <span class="wine-detail-chip">${escHTML(f.type || 'Wine')}</span>
             ${f.vintage ? `<span class="wine-detail-chip">${f.vintage}</span>` : ''}
-            ${f.rating ? `<span class="wine-detail-chip find-rating-chip">★ ${f.rating}/5</span>` : ''}
           </div>
           <div class="find-card-footer">
-            ${f.locationName ? `<span class="find-location"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escHTML(f.locationName)}</span>` : ''}
+            ${locLabel ? `<span class="find-location"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escHTML(locLabel)}</span>` : ''}
             <span class="find-date">${formatDate(f.addedDate)}</span>
           </div>
         </div>
@@ -2083,7 +2131,7 @@ function openFindModal(id) {
       <div class="modal-detail-item"><label>Category</label><div class="value">${escHTML((f.category || '—').charAt(0).toUpperCase() + (f.category || '—').slice(1))}</div></div>
       ${f.grape ? `<div class="modal-detail-item"><label>Grape / Varietal</label><div class="value">${escHTML(f.grape)}</div></div>` : ''}
       ${f.region ? `<div class="modal-detail-item"><label>Region</label><div class="value">${escHTML(f.region)}</div></div>` : ''}
-      ${f.locationName ? `<div class="modal-detail-item"><label>Found At</label><div class="value">${escHTML(f.locationName)}${mapLink}</div></div>` : ''}
+      ${f.locationName || f.locationCity ? `<div class="modal-detail-item"><label>Found At</label><div class="value">${escHTML(f.locationName || '')}${f.locationCity ? ` <span style="color:var(--text-muted);font-size:0.82rem">${escHTML(f.locationCity)}${f.locationCountry ? ', ' + escHTML(f.locationCountry) : ''}</span>` : ''}${mapLink}</div></div>` : ''}
       <div class="modal-detail-item"><label>Date Found</label><div class="value">${formatDate(f.addedDate)}</div></div>
     </div>
     ${f.notes ? `<div style="margin-top:1rem;padding:0.75rem;background:var(--bg-hover);border-radius:var(--radius-xs);font-size:0.85rem;line-height:1.5;color:var(--text-secondary)">${escHTML(f.notes)}</div>` : ''}
@@ -2218,15 +2266,19 @@ async function processFindImage(dataUrl) {
     if (!jsonMatch) throw new Error('No JSON');
     const data = JSON.parse(jsonMatch[0]);
 
-    // Reverse geocode
+    // Reverse geocode — capture venue, city, and country code
     let locationName = '';
+    let locationCity = '';
+    let locationCountry = '';
     if (gpsPosition) {
       try {
-        const geoResp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${gpsPosition.latitude}&lon=${gpsPosition.longitude}&format=json&zoom=18`);
+        const geoResp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${gpsPosition.latitude}&lon=${gpsPosition.longitude}&format=json&zoom=18&accept-language=en`);
         if (geoResp.ok) {
           const g = await geoResp.json();
-          locationName = g.address?.restaurant || g.address?.bar || g.address?.cafe || g.address?.pub ||
-            [g.address?.road, g.address?.city || g.address?.town].filter(Boolean).join(', ') || g.display_name?.split(',').slice(0, 2).join(',') || '';
+          const venueName = g.address?.restaurant || g.address?.bar || g.address?.cafe || g.address?.pub || '';
+          locationCity = g.address?.city || g.address?.town || g.address?.village || g.address?.suburb || '';
+          locationCountry = (g.address?.country_code || '').toUpperCase();
+          locationName = venueName || [locationCity, locationCountry].filter(Boolean).join(', ');
         }
       } catch {}
     }
@@ -2246,6 +2298,8 @@ async function processFindImage(dataUrl) {
       latitude: gpsPosition?.latitude || null,
       longitude: gpsPosition?.longitude || null,
       locationName,
+      locationCity,
+      locationCountry,
     };
     restaurantFinds.push(find);
     saveFinds(restaurantFinds);
@@ -2479,6 +2533,7 @@ function clearAllData() {
 // ============ BOTTLE IMAGE ============
 
 let pendingBottleImage = null; // { url, dataUrl } — set before saving
+let pendingScanRating = null; // AI-estimated rating from scan (1-5)
 
 function searchBottleImage() {
   const name = document.getElementById('wineName').value.trim();
