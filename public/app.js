@@ -713,21 +713,23 @@ async function runBatchScoring() {
   const apiKey = localStorage.getItem(API_KEY_STORAGE);
   if (!apiKey) { showToast('Add your OpenAI API key in Settings first.'); return; }
 
-  const unscored = cellar.filter(b => !b.communityScore && b.status !== 'consumed' && b.name);
-  if (unscored.length === 0) { showToast('All bottles already have scores!'); return; }
+  const unscoredBottles = cellar.filter(b => !b.communityScore && b.status !== 'consumed' && b.name);
+  const unscoredFinds = restaurantFinds.filter(f => !f.communityScore && f.name);
+  const allUnscored = [...unscoredBottles, ...unscoredFinds];
+  if (allUnscored.length === 0) { showToast('All items already have scores!'); return; }
 
   const btn = document.getElementById('batchScoreBtn');
   const statusEl = document.getElementById('batchScoreStatus');
   if (btn) btn.disabled = true;
 
   let scored = 0;
-  const total = unscored.length;
+  const total = allUnscored.length;
   if (statusEl) statusEl.textContent = `Scoring 0/${total}...`;
 
-  // Process in batches of 10 to reduce API calls
+  // Process ALL items (bottles + finds) in batches of 10
   const batchSize = 10;
-  for (let i = 0; i < unscored.length; i += batchSize) {
-    const batch = unscored.slice(i, i + batchSize);
+  for (let i = 0; i < allUnscored.length; i += batchSize) {
+    const batch = allUnscored.slice(i, i + batchSize);
     const prompt = batch.map((b, idx) => {
       const parts = [b.name, b.producer, b.type, b.region, b.vintage ? `${b.vintage}` : null, b.grape].filter(Boolean);
       return `${idx + 1}. ${parts.join(' | ')}`;
@@ -775,59 +777,15 @@ async function runBatchScoring() {
     }
 
     if (statusEl) statusEl.textContent = `Scoring ${Math.min(i + batchSize, total)}/${total}...`;
-    // Small delay between batches to avoid rate limiting
-    if (i + batchSize < unscored.length) await new Promise(r => setTimeout(r, 500));
+    if (i + batchSize < allUnscored.length) await new Promise(r => setTimeout(r, 500));
   }
 
   saveCellar(cellar);
+  saveFinds(restaurantFinds);
   renderCellar();
   renderDashboard();
-
-  // Also score finds that don't have scores
-  const unscoredFinds = restaurantFinds.filter(f => !f.communityScore && f.name);
-  if (unscoredFinds.length > 0) {
-    if (statusEl) statusEl.textContent = `Now scoring ${unscoredFinds.length} restaurant finds...`;
-    let findScored = 0;
-    for (let i = 0; i < unscoredFinds.length; i += batchSize) {
-      const batch = unscoredFinds.slice(i, i + batchSize);
-      const prompt = batch.map((f, idx) => {
-        const parts = [f.name, f.producer, f.type, f.region, f.vintage ? `${f.vintage}` : null, f.grape].filter(Boolean);
-        return `${idx + 1}. ${parts.join(' | ')}`;
-      }).join('\n');
-      try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: `For each wine/spirit below, estimate a critic score out of 100 based on known reviews (Wine Spectator, CellarTracker, Vivino, etc.) or your best estimate based on the producer's reputation and quality tier. Return ONLY a JSON array of numbers (scores), one per item, in the same order. If you cannot estimate, use null.\n\n${prompt}` }],
-            max_tokens: 300, temperature: 0.1,
-          })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const content = data.choices?.[0]?.message?.content || '';
-          const jsonMatch = content.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const scores = JSON.parse(jsonMatch[0]);
-            batch.forEach((f, idx) => {
-              const score = scores[idx];
-              if (score && typeof score === 'number' && score >= 1 && score <= 100) {
-                f.communityScore = Math.round(score);
-                findScored++;
-              }
-            });
-          }
-        }
-      } catch (err) { console.error('Find batch scoring error:', err); }
-      if (i + batchSize < unscoredFinds.length) await new Promise(r => setTimeout(r, 500));
-    }
-    saveFinds(restaurantFinds);
-    renderFinds();
-    scored += findScored;
-  }
-
-  if (statusEl) statusEl.textContent = `Done! Scored ${scored}/${total + (unscoredFinds?.length || 0)}.`;
+  renderFinds();
+  if (statusEl) statusEl.textContent = `Done! Scored ${scored}/${total}.`;
   if (btn) btn.disabled = false;
   showToast(`Estimated scores for ${scored} items`);
 }
@@ -2143,6 +2101,7 @@ function showToast(msg) {
 // ============ RESTAURANT FINDS ============
 
 let findsLocationFilter = ''; // '' = all, or 'City, CC' string
+let findsCategoryFilter = ''; // '' = all, or 'wine'/'whiskey'/'tequila'/'sake'/'spirit'
 
 function getFindsLocationLabel(f) {
   // Build display: "City, CC" format
@@ -2175,6 +2134,37 @@ function setFindsLocationFilter(loc) {
   renderFinds();
 }
 
+function setFindsCategoryFilter(cat) {
+  findsCategoryFilter = cat;
+  renderFinds();
+}
+
+function getFindCategory(f) {
+  const t = f.type || '';
+  if (isWhiskey(t)) return 'whiskey';
+  if (isTequila(t)) return 'tequila';
+  if (isSake(t)) return 'sake';
+  if (SPIRIT_TYPES.includes(t)) return 'spirit';
+  return 'wine';
+}
+
+function renderFindsCategoryFilter() {
+  const container = document.getElementById('findsCategoryFilter');
+  if (!container) return;
+  const cats = {};
+  restaurantFinds.forEach(f => {
+    const c = getFindCategory(f);
+    cats[c] = (cats[c] || 0) + 1;
+  });
+  const catOrder = ['wine','whiskey','tequila','sake','spirit'];
+  const catLabels = {wine:'Wine',whiskey:'Whiskey',tequila:'Tequila',sake:'Sake',spirit:'Spirit'};
+  const activeCats = catOrder.filter(c => cats[c]);
+  if (activeCats.length <= 1) { container.style.display = 'none'; return; }
+  container.style.display = 'flex';
+  container.innerHTML = `<button class="finds-loc-btn${!findsCategoryFilter?' active':''}" onclick="setFindsCategoryFilter('')">All</button>` +
+    activeCats.map(c => `<button class="finds-loc-btn${findsCategoryFilter===c?' active':''}" onclick="setFindsCategoryFilter('${c}')">${catLabels[c]} (${cats[c]})</button>`).join('');
+}
+
 function renderFinds() {
   const search = (document.getElementById('findsSearch')?.value || '').toLowerCase();
   let finds = [...restaurantFinds];
@@ -2189,6 +2179,10 @@ function renderFinds() {
       (f.type || '').toLowerCase().includes(search)
     );
   }
+  // Filter by category
+  if (findsCategoryFilter) {
+    finds = finds.filter(f => getFindCategory(f) === findsCategoryFilter);
+  }
   // Filter by location
   if (findsLocationFilter) {
     finds = finds.filter(f => getFindsLocationLabel(f) === findsLocationFilter);
@@ -2197,7 +2191,8 @@ function renderFinds() {
   const countEl = document.getElementById('findsCount');
   if (countEl) countEl.textContent = finds.length + ' find' + (finds.length !== 1 ? 's' : '');
 
-  // Render location filter pills
+  // Render filter pills
+  renderFindsCategoryFilter();
   renderFindsLocationFilter();
 
   const grid = document.getElementById('findsGrid');
