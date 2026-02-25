@@ -14,6 +14,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <script>
+    // Early detection: if share URL, hide everything except shared view
+    if (/^\/share\/[a-f0-9-]+$/i.test(window.location.pathname)) {
+      document.body.classList.add('no-auth', 'shared-view');
+    }
+  </script>
   <!-- Sidebar Navigation -->
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-brand">
@@ -244,6 +250,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
             <input type="text" placeholder="Search collection..." id="cellarSearch" oninput="filterCellar()">
           </div>
+          <button class="btn btn-primary btn-sm" onclick="switchView('add')" title="Add a bottle" style="display:inline-flex;align-items:center;gap:0.3rem;white-space:nowrap">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+          </button>
         </div>
       </header>
 

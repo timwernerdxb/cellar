@@ -2169,8 +2169,10 @@ function renderFinds() {
 
   grid.innerHTML = finds.map(f => {
     const locLabel = getFindsLocationLabel(f);
+    const scoreBadge = f.communityScore ? `<span class="card-badge-rating">${Math.round(f.communityScore)}<span class="card-badge-rating-max">/100</span></span>` : '';
     return `
       <div class="find-card find-card-compact" onclick="openFindModal('${f.id}')">
+        ${scoreBadge}
         <div class="find-card-body">
           <div class="find-card-title">${escHTML(f.name || 'Unknown')}</div>
           <div class="find-card-subtitle">${escHTML(f.producer || '')}</div>
@@ -2197,8 +2199,8 @@ function openFindModal(id) {
     const mapUrl = isApple
       ? `https://maps.apple.com/?ll=${f.latitude},${f.longitude}&q=${encodeURIComponent(f.locationName || 'Restaurant Find')}`
       : `https://www.google.com/maps?q=${f.latitude},${f.longitude}`;
-    mapLink = `<a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="margin-top:0.5rem;display:inline-flex;align-items:center;gap:0.3rem">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> Open in Maps</a>`;
+    mapLink = `<a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-secondary" style="margin-top:0.5rem;display:inline-flex;align-items:center;gap:0.25rem;font-size:0.72rem;padding:0.25rem 0.6rem;float:right">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> Maps</a>`;
   }
   const body = document.getElementById('modalBody');
   body.innerHTML = `
@@ -2335,7 +2337,7 @@ async function processFindImage(dataUrl) {
         model: 'gpt-4o',
         messages: [{ role: 'user', content: [
           { type: 'text', text: `Analyze this bottle label. Extract info AND use your knowledge to fill gaps. Return ONLY valid JSON:
-{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","notes":"brief tasting profile (2-3 sentences)" or null}` },
+{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
           { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
         ]}],
         max_tokens: 500,
@@ -2379,6 +2381,7 @@ async function processFindImage(dataUrl) {
       region: data.region || '',
       vintage: data.vintage || null,
       notes: data.notes || '',
+      communityScore: data.communityScore || null,
       imageUrl: dataUrl,
       addedDate: new Date().toISOString().split('T')[0],
       latitude: gpsPosition?.latitude || null,
@@ -2403,14 +2406,14 @@ async function processFindImage(dataUrl) {
 
 async function loadSharedCellar(token) {
   // Hide ALL app UI for shared view — show only the shared section
-  document.body.classList.add('no-auth');
+  document.body.classList.add('no-auth', 'shared-view');
   const sidebar = document.querySelector('.sidebar');
   if (sidebar) sidebar.style.display = 'none';
   const navToggle = document.querySelector('.mobile-nav-toggle');
   if (navToggle) navToggle.style.display = 'none';
 
-  // Hide all views
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  // Force-hide ALL views including welcome
+  document.querySelectorAll('.view').forEach(v => { v.classList.remove('active'); v.style.display = 'none'; });
 
   // Use the static shared view section from HTML
   const sharedView = document.getElementById('view-shared');
@@ -2428,6 +2431,8 @@ async function loadSharedCellar(token) {
   try {
     const resp = await fetch('/api/share/' + token);
     if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error('Share API error:', resp.status, errText);
       sharedView.innerHTML = `<div style="padding:4rem;text-align:center">
         <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto 1rem;display:block;color:var(--text-muted)"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
         <h3>Link not found</h3>
@@ -2436,6 +2441,7 @@ async function loadSharedCellar(token) {
       return;
     }
     const data = await resp.json();
+    console.log('Share data loaded:', data.bottles?.length, 'bottles');
     renderSharedView(data, sharedView);
   } catch (err) {
     console.error('Share load error:', err);
@@ -2445,7 +2451,9 @@ async function loadSharedCellar(token) {
 
 function renderSharedView(data, container) {
   const { bottles, owner, showValues } = data;
+  console.log('renderSharedView: total bottles from API:', bottles.length, 'statuses:', bottles.map(b => b.status || 'none'));
   const activeBottles = bottles.filter(b => b.status !== 'consumed');
+  console.log('renderSharedView: active bottles:', activeBottles.length);
   const total = activeBottles.reduce((s, b) => s + (b.quantity || 1), 0);
 
   // Group by type for stats

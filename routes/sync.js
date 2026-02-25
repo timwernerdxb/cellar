@@ -12,32 +12,32 @@ router.post('/upload', async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      // Upsert all bottles
+      // Delete+reinsert bottles to handle removals
+      await client.query('DELETE FROM bottles WHERE user_id = $1', [req.userId]);
       for (const bottle of bottles) {
         const id = bottle.id || Date.now().toString();
         await client.query(
-          `INSERT INTO bottles (id, user_id, data) VALUES ($1, $2, $3)
-           ON CONFLICT (id, user_id) DO UPDATE SET data = $3, updated_at = NOW()`,
+          `INSERT INTO bottles (id, user_id, data) VALUES ($1, $2, $3)`,
           [id, req.userId, JSON.stringify(bottle)]
         );
       }
 
-      // Upsert all tastings
+      // Delete+reinsert tastings to handle removals
+      await client.query('DELETE FROM tastings WHERE user_id = $1', [req.userId]);
       for (const tasting of tastings) {
         const id = tasting.id || Date.now().toString();
         await client.query(
-          `INSERT INTO tastings (id, user_id, data) VALUES ($1, $2, $3)
-           ON CONFLICT (id, user_id) DO UPDATE SET data = $3, updated_at = NOW()`,
+          `INSERT INTO tastings (id, user_id, data) VALUES ($1, $2, $3)`,
           [id, req.userId, JSON.stringify(tasting)]
         );
       }
 
-      // Upsert all finds
+      // Delete+reinsert finds to handle removals
+      await client.query('DELETE FROM finds WHERE user_id = $1', [req.userId]);
       for (const find of finds) {
         const id = find.id || Date.now().toString();
         await client.query(
-          `INSERT INTO finds (id, user_id, data) VALUES ($1, $2, $3)
-           ON CONFLICT (id, user_id) DO UPDATE SET data = $3, updated_at = NOW()`,
+          `INSERT INTO finds (id, user_id, data) VALUES ($1, $2, $3)`,
           [id, req.userId, JSON.stringify(find)]
         );
       }

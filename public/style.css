@@ -886,8 +886,8 @@ input, select, textarea, button {
 /* Rating badge — top left corner */
 .card-badge-rating {
   position: absolute;
-  top: 0.35rem;
-  left: 0.35rem;
+  top: 0.2rem;
+  left: 0.25rem;
   background: var(--gold);
   color: #fff;
   font-size: 0.68rem;
@@ -2145,6 +2145,7 @@ input, select, textarea, button {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .find-card:hover {
@@ -2497,6 +2498,14 @@ body.no-auth .sidebar { display: none; }
 body.no-auth .mobile-nav-toggle { display: none; }
 body.no-auth .main-content { margin-left: 0; }
 
+/* Shared cellar view — standalone page */
+body.shared-view #view-welcome { display: none !important; }
+body.shared-view .sidebar { display: none !important; }
+body.shared-view .mobile-nav-toggle { display: none !important; }
+body.shared-view .main-content { margin-left: 0; max-width: 100%; padding: 1.5rem; }
+body.shared-view #view-shared { display: block !important; }
+body.shared-view .view:not(#view-shared) { display: none !important; }
+
 /* ============================================
    RESPONSIVE
    ============================================ */
@@ -2637,9 +2646,16 @@ body.no-auth .main-content { margin-left: 0; }
     font-size: 0.95rem;
   }
 
-  /* Horizontal wine cards — smaller on mobile */
+  /* Wine cards — stack vertically on tablet/mobile */
+  .wine-list {
+    flex-direction: column;
+    overflow-x: visible;
+    gap: 0.6rem;
+  }
+
   .wine-card-sm {
-    min-width: 180px;
+    min-width: 0;
+    width: 100%;
     padding: 0.75rem;
   }
 
@@ -2779,13 +2795,16 @@ body.no-auth .main-content { margin-left: 0; }
     margin-bottom: 0.75rem;
   }
 
-  /* Horizontal wine cards */
+  /* Wine cards — stack vertically on small screens */
   .wine-list {
-    gap: 0.6rem;
+    flex-direction: column;
+    overflow-x: visible;
+    gap: 0.5rem;
   }
 
   .wine-card-sm {
-    min-width: 160px;
+    min-width: 0;
+    width: 100%;
     padding: 0.65rem;
   }
 
