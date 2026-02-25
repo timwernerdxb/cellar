@@ -1922,10 +1922,12 @@ async function capturePhoto() {
   canvas.width = w;
   canvas.height = h;
   canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
   closeCamera();
-  // Resize before sending to API to reduce token cost
-  resizeImageForVision(dataUrl, 1024).then(resized => processLabelImage(resized));
+  // Apply background blur, then resize before sending to API
+  applyBackgroundBlur(rawUrl).then(blurred =>
+    resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
+  );
 }
 
 function handleImageUpload(event) {
@@ -1933,8 +1935,10 @@ function handleImageUpload(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    // Resize image before sending to API to reduce token cost / avoid quota errors
-    resizeImageForVision(e.target.result, 1024).then(resized => processLabelImage(resized));
+    // Apply background blur, then resize before sending to API
+    applyBackgroundBlur(e.target.result).then(blurred =>
+      resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
+    );
   };
   reader.readAsDataURL(file);
   event.target.value = '';
@@ -1955,6 +1959,60 @@ function resizeImageForVision(dataUrl, maxDim = 1024) {
       resolve(canvas.toDataURL('image/jpeg', 0.8));
     };
     img.onerror = () => resolve(dataUrl); // fallback to original
+    img.src = dataUrl;
+  });
+}
+
+// ============ BACKGROUND BLUR (portrait / bokeh effect) ============
+
+function applyBackgroundBlur(dataUrl, opts = {}) {
+  const blurPx = opts.blurStrength || 12;
+  const focusR = opts.focusRadius || 0.35;   // % of short edge for fully sharp zone
+  const fadeR  = opts.gradientWidth || 0.25;  // % of short edge for fade zone
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width, h = img.height;
+      const shortEdge = Math.min(w, h);
+
+      // 1. Create blurred background canvas
+      const bgCanvas = document.createElement('canvas');
+      bgCanvas.width = w; bgCanvas.height = h;
+      const bgCtx = bgCanvas.getContext('2d');
+      bgCtx.filter = `blur(${blurPx}px)`;
+      // Draw slightly larger to avoid transparent blur edges
+      const pad = blurPx * 2;
+      bgCtx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
+      bgCtx.filter = 'none';
+
+      // 2. Create sharp foreground canvas with radial mask
+      const fgCanvas = document.createElement('canvas');
+      fgCanvas.width = w; fgCanvas.height = h;
+      const fgCtx = fgCanvas.getContext('2d');
+      // Draw sharp image
+      fgCtx.drawImage(img, 0, 0, w, h);
+      // Apply radial gradient mask — center opaque, edges transparent
+      fgCtx.globalCompositeOperation = 'destination-in';
+      const cx = w / 2, cy = h / 2;
+      const innerR = shortEdge * focusR;
+      const outerR = shortEdge * (focusR + fadeR);
+      const grad = fgCtx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      fgCtx.fillStyle = grad;
+      fgCtx.fillRect(0, 0, w, h);
+
+      // 3. Composite: blurred bg + sharp center
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = w; outCanvas.height = h;
+      const outCtx = outCanvas.getContext('2d');
+      outCtx.drawImage(bgCanvas, 0, 0);
+      outCtx.drawImage(fgCanvas, 0, 0);
+
+      resolve(outCanvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback
     img.src = dataUrl;
   });
 }
@@ -2046,19 +2104,21 @@ Use your knowledge to estimate price, critic score, drinking window, grape/rice 
 
     // Auto-set label photo as bottle image if no image chosen yet
     if (!pendingBottleImage && dataUrl) {
-      // Resize label photo for bottle image (max 400px wide)
-      const img = new Image();
-      img.onload = () => {
-        const maxW = 400;
-        const scale = Math.min(1, maxW / img.width);
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        const resized = canvas.toDataURL('image/jpeg', 0.8);
-        setBottleImagePreview(resized, resized);
-      };
-      img.src = dataUrl;
+      // Blur background, then resize label photo for bottle image (max 400px wide)
+      applyBackgroundBlur(dataUrl).then(blurred => {
+        const img = new Image();
+        img.onload = () => {
+          const maxW = 400;
+          const scale = Math.min(1, maxW / img.width);
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          const resized = canvas.toDataURL('image/jpeg', 0.8);
+          setBottleImagePreview(resized, resized);
+        };
+        img.src = blurred;
+      });
     }
 
     showToast(extracted.name ? `Recognized: ${extracted.name}` : 'Analysis complete — review fields.');
@@ -2373,9 +2433,10 @@ async function captureFindPhoto() {
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
   cancelFindScan();
-  const resized = await resizeImageForVision(dataUrl, 1024);
+  const blurred = await applyBackgroundBlur(rawUrl);
+  const resized = await resizeImageForVision(blurred, 1024);
   await processFindImage(resized);
 }
 
@@ -2384,7 +2445,8 @@ function handleFindImageUpload(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const resized = await resizeImageForVision(e.target.result, 1024);
+    const blurred = await applyBackgroundBlur(e.target.result);
+    const resized = await resizeImageForVision(blurred, 1024);
     await processFindImage(resized);
   };
   reader.readAsDataURL(file);
@@ -2871,6 +2933,84 @@ async function findSimilar(id, source) {
   }
 }
 
+// ============ BATCH BACKGROUND BLUR ============
+
+async function blurAllBackgrounds() {
+  const btn = document.getElementById('blurBackgroundsBtn');
+  const status = document.getElementById('blurBackgroundsStatus');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  status.textContent = '';
+  status.style.color = '';
+
+  let processed = 0;
+  let skipped = 0;
+  let total = 0;
+
+  // Collect all items with base64 images
+  const items = [];
+  cellar.forEach(b => {
+    if (b.imageUrl && b.imageUrl.startsWith('data:') && !b.imageBlurred) {
+      items.push({ ref: b, source: 'cellar' });
+    } else if (b.imageUrl) {
+      skipped++;
+    }
+  });
+  restaurantFinds.forEach(f => {
+    if (f.imageUrl && f.imageUrl.startsWith('data:') && !f.imageBlurred) {
+      items.push({ ref: f, source: 'finds' });
+    } else if (f.imageUrl) {
+      skipped++;
+    }
+  });
+
+  total = items.length;
+  if (total === 0) {
+    status.textContent = skipped > 0 ? 'All images already processed.' : 'No images found to blur.';
+    status.style.color = 'var(--text-muted)';
+    btn.disabled = false;
+    btn.textContent = 'Blur All Backgrounds';
+    return;
+  }
+
+  status.textContent = `Processing 0/${total} images...`;
+
+  try {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      status.textContent = `Processing ${i + 1}/${total} images...`;
+      try {
+        const blurred = await applyBackgroundBlur(item.ref.imageUrl);
+        item.ref.imageUrl = blurred;
+        item.ref.imageBlurred = true;
+        processed++;
+      } catch (err) {
+        console.warn('Blur failed for item:', err);
+      }
+      // Yield to UI thread every few images
+      if (i % 3 === 0) await new Promise(r => setTimeout(r, 50));
+    }
+
+    // Save and sync
+    saveCellar(cellar);
+    saveFinds(restaurantFinds);
+
+    status.textContent = `Done! Blurred ${processed}/${total} images.${skipped ? ` ${skipped} already done.` : ''}`;
+    status.style.color = 'var(--success)';
+    showToast(`Blurred ${processed} photo backgrounds — syncing...`);
+    renderCellar();
+    renderFinds();
+    renderDashboard();
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    status.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Blur All Backgrounds';
+  }
+}
+
 // ============ BOTTLE IMAGE ============
 
 let pendingBottleImage = null; // { url, dataUrl } — set before saving
@@ -2958,9 +3098,10 @@ function handleBottleImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  // Resize image to save storage (max 400px wide)
+  // Apply blur, then resize to save storage (max 400px wide)
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async (e) => {
+    const blurred = await applyBackgroundBlur(e.target.result);
     const img = new Image();
     img.onload = () => {
       const maxW = 400;
@@ -2973,7 +3114,7 @@ function handleBottleImageUpload(event) {
       setBottleImagePreview(dataUrl, dataUrl);
       showToast('Photo added');
     };
-    img.src = e.target.result;
+    img.src = blurred;
   };
   reader.readAsDataURL(file);
   event.target.value = '';
