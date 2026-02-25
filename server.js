@@ -240,7 +240,7 @@ function buildSharePage(data) {
     .price{font-weight:600;font-size:0.9rem}
     .stars{font-size:0.85rem;color:#C9A96E}
     .qty{position:absolute;top:3.4rem;right:0.5rem;background:#F0EDE8;border-radius:99px;padding:0.15rem 0.55rem;font-size:0.72rem;font-weight:600;color:#6B6560}
-    .score{position:absolute;top:0.5rem;right:0.5rem;background:#C9A96E;color:#fff;font-size:0.68rem;font-weight:700;padding:0.15rem 0.45rem;border-radius:4px;z-index:3;line-height:1.2}
+    .score{position:absolute;top:0.25rem;right:0.5rem;background:#C9A96E;color:#fff;font-size:0.68rem;font-weight:700;padding:0.15rem 0.45rem;border-radius:4px;z-index:3;line-height:1.2}
     .score small{font-weight:400;opacity:0.7;font-size:0.58rem}
     .empty{text-align:center;padding:3rem 1rem;color:#9B9590}
     .footer{text-align:center;margin-top:2rem;padding-top:1rem;border-top:1px solid #E8E4DE;font-size:0.78rem;color:#9B9590}
