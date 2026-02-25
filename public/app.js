@@ -1315,9 +1315,32 @@ function renderCellar() {
   }).join('');
 }
 
+const CATEGORY_TYPES = {
+  wine: ['Red','White','Rosé','Sparkling','Champagne','Dessert','Fortified'],
+  whiskey: ['Scotch','Bourbon','Irish','Japanese','Rye','Single Malt','Blended','Tennessee'],
+  tequila: ['Tequila','Mezcal'],
+  sake: ['Junmai','Ginjo','Daiginjo','Nigori','Sparkling Sake','Sake'],
+  spirit: ['Rum','Cognac','Brandy','Gin','Vodka','Other Spirit'],
+};
+
 function toggleTypeFilter(type) {
   if (activeFilters.has(type)) activeFilters.delete(type);
   else activeFilters.add(type);
+  updateFilterCheckboxes();
+  updateFilterButtonText();
+  renderCellar();
+}
+
+function toggleCategoryFilter(category) {
+  const types = CATEGORY_TYPES[category] || [];
+  const allSelected = types.every(t => activeFilters.has(t));
+  if (allSelected) {
+    // Deselect all types in this category
+    types.forEach(t => activeFilters.delete(t));
+  } else {
+    // Select all types in this category
+    types.forEach(t => activeFilters.add(t));
+  }
   updateFilterCheckboxes();
   updateFilterButtonText();
   renderCellar();
@@ -1341,9 +1364,21 @@ function updateFilterCheckboxes() {
 
 function updateFilterButtonText() {
   const btn = document.getElementById('filterBtnText');
-  if (activeFilters.size === 0) btn.textContent = 'All Types';
-  else if (activeFilters.size <= 2) btn.textContent = [...activeFilters].join(', ');
-  else btn.textContent = activeFilters.size + ' types selected';
+  if (activeFilters.size === 0) { btn.textContent = 'All Types'; return; }
+
+  // Check if entire categories are selected — show category name instead of individual types
+  const catNames = {wine:'Wine',whiskey:'Whiskey',tequila:'Tequila',sake:'Sake',spirit:'Spirits'};
+  const selectedCats = [];
+  const remaining = new Set(activeFilters);
+  for (const [cat, types] of Object.entries(CATEGORY_TYPES)) {
+    if (types.every(t => remaining.has(t))) {
+      selectedCats.push(catNames[cat]);
+      types.forEach(t => remaining.delete(t));
+    }
+  }
+  const parts = [...selectedCats, ...remaining];
+  if (parts.length <= 2) btn.textContent = parts.join(', ');
+  else btn.textContent = parts.length + ' filters selected';
 }
 
 function toggleFilterDropdown() {

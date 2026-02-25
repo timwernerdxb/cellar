@@ -743,6 +743,13 @@ input, select, textarea, button {
   letter-spacing: 0.05em;
   color: var(--text-muted);
   padding: 0.4rem 0.75rem 0.2rem;
+  cursor: pointer;
+  transition: color 0.15s;
+  user-select: none;
+}
+
+.filter-group-label:hover {
+  color: var(--accent);
 }
 
 .filter-check-item {

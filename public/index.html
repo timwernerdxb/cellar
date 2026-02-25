@@ -277,7 +277,7 @@
               <button class="filter-clear-btn" onclick="clearTypeFilters()">Clear</button>
             </div>
             <div class="filter-group">
-              <div class="filter-group-label">Wine</div>
+              <div class="filter-group-label" onclick="toggleCategoryFilter('wine')">Wine</div>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Red')"> Red</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('White')"> White</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Ros\u00e9')"> Ros&eacute;</label>
@@ -287,7 +287,7 @@
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Fortified')"> Fortified</label>
             </div>
             <div class="filter-group">
-              <div class="filter-group-label">Whiskey</div>
+              <div class="filter-group-label" onclick="toggleCategoryFilter('whiskey')">Whiskey</div>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Scotch')"> Scotch</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Bourbon')"> Bourbon</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Irish')"> Irish</label>
@@ -298,12 +298,12 @@
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Tennessee')"> Tennessee</label>
             </div>
             <div class="filter-group">
-              <div class="filter-group-label">Tequila</div>
+              <div class="filter-group-label" onclick="toggleCategoryFilter('tequila')">Tequila</div>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Tequila')"> Tequila</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Mezcal')"> Mezcal</label>
             </div>
             <div class="filter-group">
-              <div class="filter-group-label">Sake</div>
+              <div class="filter-group-label" onclick="toggleCategoryFilter('sake')">Sake</div>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Junmai')"> Junmai</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Ginjo')"> Ginjo</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Daiginjo')"> Daiginjo</label>
@@ -312,7 +312,7 @@
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Sake')"> Sake (Other)</label>
             </div>
             <div class="filter-group">
-              <div class="filter-group-label">Spirits</div>
+              <div class="filter-group-label" onclick="toggleCategoryFilter('spirit')">Spirits</div>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Rum')"> Rum</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Cognac')"> Cognac</label>
               <label class="filter-check-item"><input type="checkbox" onchange="toggleTypeFilter('Brandy')"> Brandy</label>
