@@ -795,6 +795,18 @@
         </div>
 
         <div class="settings-card">
+          <h3>Fix Character Encoding</h3>
+          <p class="settings-desc">Fix corrupted accented characters (e.g. "D�a" → "Día") in your bottles, tastings, and finds. This scans your server data and repairs common Spanish, French, and Portuguese character issues.</p>
+          <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.5rem;justify-content:flex-start;align-items:center;gap:0.75rem">
+            <button class="btn btn-primary btn-sm" id="fixEncodingBtn" onclick="fixEncoding()">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;margin-right:4px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              Fix Character Encoding
+            </button>
+            <span class="api-key-status" id="fixEncodingStatus" style="font-size:0.8rem"></span>
+          </div>
+        </div>
+
+        <div class="settings-card">
           <h3>Data Management</h3>
           <p class="settings-desc">Export or clear your collection data.</p>
           <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.5rem;justify-content:flex-start">

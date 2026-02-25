@@ -2716,6 +2716,48 @@ function clearAllData() {
   showToast('All data cleared');
 }
 
+async function fixEncoding() {
+  const token = localStorage.getItem('vino_token');
+  if (!token) { showToast('Please sign in first'); return; }
+  const btn = document.getElementById('fixEncodingBtn');
+  const status = document.getElementById('fixEncodingStatus');
+  btn.disabled = true;
+  btn.textContent = 'Fixing...';
+  status.textContent = '';
+  try {
+    const resp = await fetch('/api/settings/fix-encoding', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      let msg = `Fixed ${data.fixed} record(s).`;
+      if (data.remaining > 0) {
+        msg += ` ${data.remaining} still have unknown characters.`;
+      }
+      status.textContent = msg;
+      status.style.color = data.remaining > 0 ? 'var(--warning)' : 'var(--success, #4caf50)';
+      if (data.fixed > 0) {
+        showToast(`Fixed ${data.fixed} record(s) — reloading...`);
+        // Re-download from server to get the fixed data
+        setTimeout(() => syncFromServer(), 1000);
+      } else {
+        showToast('No encoding issues found');
+      }
+    } else {
+      status.textContent = data.error || 'Failed';
+      status.style.color = 'var(--danger)';
+    }
+  } catch (err) {
+    console.error('Fix encoding error:', err);
+    status.textContent = 'Network error';
+    status.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Fix Character Encoding';
+  }
+}
+
 // ============ BOTTLE IMAGE ============
 
 let pendingBottleImage = null; // { url, dataUrl } — set before saving
