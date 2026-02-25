@@ -1924,9 +1924,11 @@ async function capturePhoto() {
   canvas.getContext('2d').drawImage(video, 0, 0, w, h);
   const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
   closeCamera();
-  // Apply background blur, then resize before sending to API
-  applyBackgroundBlur(rawUrl).then(blurred =>
-    resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
+  // Smart crop → blur → resize before sending to API
+  smartCropImage(rawUrl).then(cropped =>
+    applyBackgroundBlur(cropped).then(blurred =>
+      resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
+    )
   );
 }
 
@@ -1935,9 +1937,11 @@ function handleImageUpload(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    // Apply background blur, then resize before sending to API
-    applyBackgroundBlur(e.target.result).then(blurred =>
-      resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
+    // Smart crop → blur → resize before sending to API
+    smartCropImage(e.target.result).then(cropped =>
+      applyBackgroundBlur(cropped).then(blurred =>
+        resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
+      )
     );
   };
   reader.readAsDataURL(file);
@@ -1959,6 +1963,78 @@ function resizeImageForVision(dataUrl, maxDim = 1024) {
       resolve(canvas.toDataURL('image/jpeg', 0.8));
     };
     img.onerror = () => resolve(dataUrl); // fallback to original
+    img.src = dataUrl;
+  });
+}
+
+// ============ SMART CROP (product detection) ============
+
+function smartCropImage(dataUrl) {
+  return new Promise(async (resolve) => {
+    const apiKey = localStorage.getItem(API_KEY_STORAGE);
+    if (!apiKey) { resolve(dataUrl); return; }
+
+    try {
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Look at this image. Find the main product (bottle, box, can, bag, or package) in the photo. Return ONLY a JSON object with the bounding box as percentages of the image dimensions: {"x": left%, "y": top%, "w": width%, "h": height%}. Values 0-100. If no product found return {"x":0,"y":0,"w":100,"h":100}.' },
+              { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
+            ]
+          }],
+          max_tokens: 100,
+          temperature: 0.1
+        })
+      });
+
+      if (!resp.ok) { console.warn('Smart crop API error:', resp.status); resolve(dataUrl); return; }
+
+      const data = await resp.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) { resolve(dataUrl); return; }
+
+      const box = JSON.parse(jsonMatch[0]);
+      if (typeof box.x !== 'number' || typeof box.y !== 'number' ||
+          typeof box.w !== 'number' || typeof box.h !== 'number') { resolve(dataUrl); return; }
+
+      // Skip if already well-framed (>90%) or suspiciously small (<10%)
+      if ((box.w > 90 && box.h > 90) || box.w < 10 || box.h < 10) { resolve(dataUrl); return; }
+
+      resolve(await cropToBox(dataUrl, box));
+    } catch (err) {
+      console.warn('Smart crop error:', err.message);
+      resolve(dataUrl);
+    }
+  });
+}
+
+function cropToBox(dataUrl, box) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width, h = img.height;
+      const pad = 0.05; // 5% padding
+      let sx = Math.max(0, (box.x / 100 - pad) * w);
+      let sy = Math.max(0, (box.y / 100 - pad) * h);
+      let sw = Math.min(w - sx, (box.w / 100 + pad * 2) * w);
+      let sh = Math.min(h - sy, (box.h / 100 + pad * 2) * h);
+      if (sx + sw > w) sw = w - sx;
+      if (sy + sh > h) sh = h - sy;
+      if (sw < 50 || sh < 50) { resolve(dataUrl); return; }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(sw);
+      canvas.height = Math.round(sh);
+      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
 }
@@ -2435,7 +2511,8 @@ async function captureFindPhoto() {
   canvas.getContext('2d').drawImage(video, 0, 0);
   const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
   cancelFindScan();
-  const blurred = await applyBackgroundBlur(rawUrl);
+  const cropped = await smartCropImage(rawUrl);
+  const blurred = await applyBackgroundBlur(cropped);
   const resized = await resizeImageForVision(blurred, 1024);
   await processFindImage(resized);
 }
@@ -2445,7 +2522,8 @@ function handleFindImageUpload(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const blurred = await applyBackgroundBlur(e.target.result);
+    const cropped = await smartCropImage(e.target.result);
+    const blurred = await applyBackgroundBlur(cropped);
     const resized = await resizeImageForVision(blurred, 1024);
     await processFindImage(resized);
   };
@@ -3039,6 +3117,103 @@ async function blurAllBackgrounds() {
   }
 }
 
+// ============ BATCH SMART CROP ============
+
+async function smartCropAllPhotos() {
+  const btn = document.getElementById('smartCropBtn');
+  const status = document.getElementById('smartCropStatus');
+  if (!btn) return;
+
+  const apiKey = localStorage.getItem(API_KEY_STORAGE);
+  if (!apiKey) {
+    status.textContent = 'Add your OpenAI API key first.';
+    status.style.color = 'var(--danger)';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  status.textContent = '';
+  status.style.color = '';
+
+  let processed = 0;
+  let skipped = 0;
+
+  const items = [];
+  cellar.forEach(b => {
+    if (b.imageUrl && !b.imageCropped) {
+      items.push({ ref: b, source: 'cellar' });
+    } else if (b.imageUrl && b.imageCropped) {
+      skipped++;
+    }
+  });
+  restaurantFinds.forEach(f => {
+    if (f.imageUrl && !f.imageCropped) {
+      items.push({ ref: f, source: 'finds' });
+    } else if (f.imageUrl && f.imageCropped) {
+      skipped++;
+    }
+  });
+
+  const total = items.length;
+  if (total === 0) {
+    status.textContent = skipped > 0 ? 'All images already cropped.' : 'No images found to crop.';
+    status.style.color = 'var(--text-muted)';
+    btn.disabled = false;
+    btn.textContent = 'Crop All Photos';
+    return;
+  }
+
+  status.textContent = `Processing 0/${total} images...`;
+
+  try {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      status.textContent = `Processing ${i + 1}/${total} images...`;
+      try {
+        let srcUrl = item.ref.imageUrl;
+        if (srcUrl.startsWith('http')) {
+          srcUrl = await imageUrlToDataUrl(srcUrl);
+        }
+        const cropped = await smartCropImage(srcUrl);
+        if (cropped !== srcUrl) {
+          // Crop changed — re-apply blur since composition changed
+          const blurred = await applyBackgroundBlur(cropped);
+          item.ref.imageUrl = blurred;
+          item.ref.imageCropped = true;
+          item.ref.imageBlurred = true;
+          processed++;
+        } else {
+          item.ref.imageCropped = true; // mark so we don't retry
+          skipped++;
+        }
+      } catch (err) {
+        console.warn('Smart crop failed for', item.ref.name || 'item', ':', err.message);
+      }
+      // Throttle API calls + yield to UI
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    saveCellar(cellar);
+    saveFinds(restaurantFinds);
+
+    status.textContent = `Done! Cropped ${processed} of ${total} images.${skipped ? ` ${skipped} skipped.` : ''}`;
+    status.style.color = 'var(--success)';
+    showToast(`Smart-cropped ${processed} photos`);
+    renderCellar();
+    renderFinds();
+    renderDashboard();
+
+    if (typeof syncFromServer === 'function') syncFromServer();
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    status.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crop All Photos';
+  }
+}
+
 // ============ BOTTLE IMAGE ============
 
 let pendingBottleImage = null; // { url, dataUrl } — set before saving
@@ -3126,10 +3301,11 @@ function handleBottleImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  // Apply blur, then resize to save storage (max 400px wide)
+  // Smart crop → blur, then resize to save storage (max 400px wide)
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const blurred = await applyBackgroundBlur(e.target.result);
+    const cropped = await smartCropImage(e.target.result);
+    const blurred = await applyBackgroundBlur(cropped);
     const img = new Image();
     img.onload = () => {
       const maxW = 400;
