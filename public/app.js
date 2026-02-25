@@ -1576,21 +1576,27 @@ function editBottle(id) {
   }
 
   updateAddViewTitle(true);
-  document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Hide scan section when editing — user doesn't need to scan a label
+  document.querySelector('.scan-section').style.display = 'none';
+  // Scroll to the form, not the top
+  document.getElementById('addWineForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function updateAddViewTitle(editing) {
   const header = document.querySelector('#view-add .view-header h1');
   const subtitle = document.querySelector('#view-add .view-header .subtitle');
   const submitBtn = document.querySelector('#addWineForm .btn-primary');
+  const scanSection = document.querySelector('.scan-section');
   if (editing) {
     header.textContent = 'Edit Bottle';
     subtitle.textContent = 'Update the details below';
     submitBtn.textContent = 'Save Changes';
+    scanSection.style.display = 'none';
   } else {
     header.textContent = 'Add Bottle';
     subtitle.textContent = 'Scan a label, take a photo, or enter details manually';
     submitBtn.textContent = 'Add to Collection';
+    scanSection.style.display = '';
   }
 }
 
