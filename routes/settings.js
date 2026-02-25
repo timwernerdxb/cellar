@@ -146,4 +146,35 @@ router.post('/fix-encoding', async (req, res) => {
   }
 });
 
+// Diagnostic: show all records with corrupted characters for the current user
+router.get('/encoding-report', async (req, res) => {
+  try {
+    const pool = req.app.locals.pool;
+    const tables = ['bottles', 'tastings', 'finds'];
+    const report = [];
+    for (const table of tables) {
+      const result = await pool.query(
+        `SELECT id, data FROM ${table} WHERE data::text LIKE '%\uFFFD%' AND user_id = $1`,
+        [req.userId]
+      );
+      for (const row of result.rows) {
+        const dataStr = JSON.stringify(row.data);
+        const contexts = [];
+        const re = /.{0,20}\uFFFD.{0,20}/g;
+        let m;
+        while ((m = re.exec(dataStr)) !== null) contexts.push(m[0]);
+        report.push({
+          table,
+          id: row.id,
+          name: row.data.name || row.data.restaurantName || '?',
+          contexts,
+        });
+      }
+    }
+    res.json({ total: report.length, report });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
