@@ -488,7 +488,7 @@ app.get('/share/:token', async (req, res) => {
     const bottles = bottlesResult.rows.map(r => {
       const b = { id: r.id, ...r.data };
       if (!user.share_show_values) { delete b.marketValue; delete b.price; }
-      if (b.imageUrl && b.imageUrl.startsWith('data:')) {
+      if (b.imageUrl) {
         b.imageUrl = `/share/${token}/image/${r.id}`;
       }
       delete b.consumptionHistory; delete b.editHistory;
@@ -499,7 +499,7 @@ app.get('/share/:token', async (req, res) => {
     );
     const finds = findsResult.rows.map(r => {
       const f = { id: r.id, ...r.data };
-      if (f.imageUrl && f.imageUrl.startsWith('data:')) {
+      if (f.imageUrl) {
         f.imageUrl = `/share/${token}/image/${r.id}`;
       }
       return f;
