@@ -708,6 +708,85 @@ function runMigrations() {
 }
 runMigrations();
 
+// ---- Batch Critic Score Estimation ----
+async function runBatchScoring() {
+  const apiKey = localStorage.getItem(API_KEY_STORAGE);
+  if (!apiKey) { showToast('Add your OpenAI API key in Settings first.'); return; }
+
+  const unscored = cellar.filter(b => !b.communityScore && b.status !== 'consumed' && b.name);
+  if (unscored.length === 0) { showToast('All bottles already have scores!'); return; }
+
+  const btn = document.getElementById('batchScoreBtn');
+  const statusEl = document.getElementById('batchScoreStatus');
+  if (btn) btn.disabled = true;
+
+  let scored = 0;
+  const total = unscored.length;
+  if (statusEl) statusEl.textContent = `Scoring 0/${total}...`;
+
+  // Process in batches of 10 to reduce API calls
+  const batchSize = 10;
+  for (let i = 0; i < unscored.length; i += batchSize) {
+    const batch = unscored.slice(i, i + batchSize);
+    const prompt = batch.map((b, idx) => {
+      const parts = [b.name, b.producer, b.type, b.region, b.vintage ? `${b.vintage}` : null, b.grape].filter(Boolean);
+      return `${idx + 1}. ${parts.join(' | ')}`;
+    }).join('\n');
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{
+            role: 'user',
+            content: `For each wine/spirit below, estimate a critic score out of 100 based on known reviews (Wine Spectator, CellarTracker, Vivino, etc.) or your best estimate based on the producer's reputation and quality tier. Return ONLY a JSON array of numbers (scores), one per item, in the same order. If you cannot estimate, use null.\n\n${prompt}`
+          }],
+          max_tokens: 300,
+          temperature: 0.1,
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const errMsg = errData.error?.message || `API error ${response.status}`;
+        if (statusEl) statusEl.textContent = `Error: ${errMsg}`;
+        if (btn) btn.disabled = false;
+        showToast('Scoring error: ' + errMsg);
+        return;
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const scores = JSON.parse(jsonMatch[0]);
+        batch.forEach((b, idx) => {
+          const score = scores[idx];
+          if (score && typeof score === 'number' && score >= 1 && score <= 100) {
+            b.communityScore = Math.round(score);
+            scored++;
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Batch scoring error:', err);
+    }
+
+    if (statusEl) statusEl.textContent = `Scoring ${Math.min(i + batchSize, total)}/${total}...`;
+    // Small delay between batches to avoid rate limiting
+    if (i + batchSize < unscored.length) await new Promise(r => setTimeout(r, 500));
+  }
+
+  saveCellar(cellar);
+  renderCellar();
+  renderDashboard();
+  if (statusEl) statusEl.textContent = `Done! Scored ${scored}/${total} bottles.`;
+  if (btn) btn.disabled = false;
+  showToast(`Estimated scores for ${scored} bottles`);
+}
+
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
@@ -1828,16 +1907,39 @@ async function capturePhoto() {
   canvas.getContext('2d').drawImage(video, 0, 0, w, h);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
   closeCamera();
-  processLabelImage(dataUrl);
+  // Resize before sending to API to reduce token cost
+  resizeImageForVision(dataUrl, 1024).then(resized => processLabelImage(resized));
 }
 
 function handleImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => processLabelImage(e.target.result);
+  reader.onload = e => {
+    // Resize image before sending to API to reduce token cost / avoid quota errors
+    resizeImageForVision(e.target.result, 1024).then(resized => processLabelImage(resized));
+  };
   reader.readAsDataURL(file);
   event.target.value = '';
+}
+
+// Resize image to max dimension to save API tokens (GPT-4o vision)
+function resizeImageForVision(dataUrl, maxDim = 1024) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width, h = img.height;
+      if (w <= maxDim && h <= maxDim) { resolve(dataUrl); return; }
+      const scale = Math.min(maxDim / w, maxDim / h);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback to original
+    img.src = dataUrl;
+  });
 }
 
 // Legacy aliases
@@ -1889,7 +1991,7 @@ async function processLabelImage(dataUrl) {
   "notes": "brief tasting profile/description (2-3 sentences from your knowledge)" or null
 }
 Use your knowledge to estimate price, critic score, drinking window, grape/rice variety, tasting notes, and any other fields not visible on the label.` },
-            { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }
+            { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
           ]
         }],
         max_tokens: 700,
@@ -2215,14 +2317,18 @@ async function captureFindPhoto() {
   canvas.getContext('2d').drawImage(video, 0, 0);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
   cancelFindScan();
-  await processFindImage(dataUrl);
+  const resized = await resizeImageForVision(dataUrl, 1024);
+  await processFindImage(resized);
 }
 
 function handleFindImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = async (e) => await processFindImage(e.target.result);
+  reader.onload = async (e) => {
+    const resized = await resizeImageForVision(e.target.result, 1024);
+    await processFindImage(resized);
+  };
   reader.readAsDataURL(file);
   event.target.value = '';
 }
@@ -2253,13 +2359,16 @@ async function processFindImage(dataUrl) {
         messages: [{ role: 'user', content: [
           { type: 'text', text: `Analyze this bottle label. Extract info AND use your knowledge to fill gaps. Return ONLY valid JSON:
 {"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","notes":"brief tasting profile (2-3 sentences)" or null}` },
-          { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }
+          { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
         ]}],
         max_tokens: 500,
         temperature: 0.1,
       })
     });
-    if (!response.ok) throw new Error('API error');
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error?.message || `API error ${response.status}`);
+    }
     const result = await response.json();
     const text = result.choices?.[0]?.message?.content || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -2276,7 +2385,7 @@ async function processFindImage(dataUrl) {
         if (geoResp.ok) {
           const g = await geoResp.json();
           const venueName = g.address?.restaurant || g.address?.bar || g.address?.cafe || g.address?.pub || '';
-          locationCity = g.address?.city || g.address?.town || g.address?.village || g.address?.suburb || '';
+          locationCity = g.address?.city || g.address?.town || g.address?.state || g.address?.county || g.address?.village || '';
           locationCountry = (g.address?.country_code || '').toUpperCase();
           locationName = venueName || [locationCity, locationCountry].filter(Boolean).join(', ');
         }
@@ -2316,15 +2425,25 @@ async function processFindImage(dataUrl) {
 // ============ SHAREABLE CELLAR ============
 
 async function loadSharedCellar(token) {
+  // Hide sidebar and all nav for shared view
   document.body.classList.add('no-auth');
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+
+  // Hide sidebar completely for shared view
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) sidebar.style.display = 'none';
+  const navToggle = document.querySelector('.mobile-nav-toggle');
+  if (navToggle) navToggle.style.display = 'none';
+
   // Show shared view section
   let sharedView = document.getElementById('view-shared');
   if (!sharedView) {
     sharedView = document.createElement('section');
     sharedView.className = 'view';
     sharedView.id = 'view-shared';
-    document.querySelector('.main-content').appendChild(sharedView);
+    const main = document.querySelector('.main-content');
+    if (main) main.appendChild(sharedView);
+    else document.body.appendChild(sharedView);
   }
   sharedView.classList.add('active');
   sharedView.innerHTML = `<div class="scan-processing" style="display:flex;padding:4rem"><div class="scan-spinner"></div><p>Loading shared collection...</p></div>`;
@@ -2338,7 +2457,8 @@ async function loadSharedCellar(token) {
     const data = await resp.json();
     renderSharedView(data, sharedView);
   } catch (err) {
-    sharedView.innerHTML = `<div class="empty-state" style="padding:4rem"><h3>Failed to load</h3><p>Could not load the shared collection. Try refreshing.</p></div>`;
+    console.error('Share load error:', err);
+    sharedView.innerHTML = `<div class="empty-state" style="padding:4rem"><h3>Failed to load</h3><p>${escHTML(err.message || 'Could not load the shared collection. Try refreshing.')}</p></div>`;
   }
 }
 
@@ -2363,8 +2483,10 @@ function renderSharedView(data, container) {
   const cardsHtml = activeBottles.sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || '')).map(b => {
     const typeClass = 'type-' + (b.type || '').replace(/\s/g, '');
     const rating = b.rating ? '★'.repeat(b.rating) + '☆'.repeat(5 - b.rating) : '';
+    const scoreBadge = b.communityScore ? `<span class="card-badge-rating">${Math.round(b.communityScore)}<span class="card-badge-rating-max">/100</span></span>` : '';
     return `
       <div class="wine-card" style="cursor:default">
+        ${scoreBadge}
         <div class="wine-card-top">
           <div class="wine-color-bar ${typeClass}"></div>
           <div>
