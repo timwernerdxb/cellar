@@ -43,18 +43,26 @@ router.post('/fix-encoding', async (req, res) => {
       { before: /[Ii]$/, after: /^[oae]/, char: 'ñ' },     // Niño, Viña, Piña
       { before: /[Uu]$/, after: /^[oe]/, char: 'ñ' },      // Muñoz, Muñeca
       { before: /[Ee]$/, after: /^[oa]/, char: 'ñ' },      // Señor, Señal, Pequeño
-      // í
+      // í — lowercase
       { before: /[Dd]$/, after: /^a/, char: 'í' },          // Día
-      { before: /[sc]$/, after: /^[cn]/, char: 'ó' },       // Edición, Colección
       { before: /c$/, after: /^a/, char: 'í' },              // García
+      { before: /[sc]i$/, after: /^n/, char: 'ó' },         // Edición, Colección (the i before ó before n)
+      { before: /i$/, after: /^n/, char: 'ó' },              // Edición — ci+�+n
       { before: /[Mm]$/, after: /^s/, char: 'ú' },          // Música
       { before: /t$/, after: /^n/, char: 'í' },              // Martínez, Gutiérrez
       { before: /m$/, after: /^n/, char: 'í' },              // Jiménez, Domínguez
       { before: /r$/, after: /^g/, char: 'í' },              // Rodríguez
       { before: /[Mm]$/, after: /^x/, char: 'é' },          // México
+      { before: /s$/, after: /^a/, char: 'í' },              // Poesía
+      { before: /d$/, after: /^n/, char: 'í' },              // Jardín
+      { before: /a$/, after: /^so/, char: 'í' },             // Paraíso
+      // í — uppercase
+      { before: /D$/, after: /^L/, char: 'Í' },              // IDÍLICA
+      // á — uppercase
+      { before: /F$/, after: /^B/, char: 'Á' },              // FÁBULA
       // é
-      { before: /[Cc]af$/, after: /^[^a-z]/, char: 'é' },   // Café (end of word)
-      { before: /[Rr]os$/, after: /^[^a-z]/, char: 'é' },   // Rosé (end of word)
+      { before: /[Cc]af$/, after: /^[^a-zA-Z]/, char: 'é' },   // Café (end of word)
+      { before: /[Rr]os$/, after: /^[^a-zA-Z]/, char: 'é' },   // Rosé (end of word)
       { before: /[Cc]h$/, after: /^t/, char: 'â' },          // Château
       { before: /[Cc]uv$/, after: /^e/, char: 'é' },         // Cuvée
       { before: /[Cc]r$/, after: /^m/, char: 'é' },          // Crémant
