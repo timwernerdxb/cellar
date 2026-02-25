@@ -34,91 +34,36 @@ router.post('/fix-encoding', async (req, res) => {
   try {
     const pool = req.app.locals.pool;
 
-    // Common Spanish/Portuguese words with accented characters that appear in wine/spirits
-    // Map corrupted patterns (where accented char became \uFFFD) back to correct text
-    const REPLACEMENTS = [
-      // í patterns
-      ['D\uFFFDa', 'Día'],
-      ['d\uFFFDa', 'día'],
-      ['M\uFFFDsica', 'Música'],
-      ['m\uFFFDsica', 'música'],
-      ['Cl\uFFFDsico', 'Clásico'],
-      ['cl\uFFFDsico', 'clásico'],
-      ['Ed\uFFFDci\uFFFDn', 'Edición'],
-      ['edici\uFFFDn', 'edición'],
-      ['Colecci\uFFFDn', 'Colección'],
-      ['colecci\uFFFDn', 'colección'],
-      ['A\uFFFDejo', 'Añejo'],
-      ['a\uFFFDejo', 'añejo'],
-      ['Espa\uFFFDol', 'Español'],
-      ['espa\uFFFDol', 'español'],
-      ['Se\uFFFDor', 'Señor'],
-      ['se\uFFFDor', 'señor'],
-      ['Oto\uFFFDo', 'Otoño'],
-      ['oto\uFFFDo', 'otoño'],
-      ['Ni\uFFFDo', 'Niño'],
-      ['ni\uFFFDo', 'niño'],
-      ['Cumplea\uFFFDos', 'Cumpleaños'],
-      ['Sue\uFFFDo', 'Sueño'],
-      ['Due\uFFFDo', 'Dueño'],
-      ['Peque\uFFFDo', 'Pequeño'],
-      ['Pi\uFFFDa', 'Piña'],
-      ['Caba\uFFFDa', 'Cabaña'],
-      ['Monta\uFFFDa', 'Montaña'],
-      ['Compa\uFFFD\uFFFDa', 'Compañía'],
-      ['Compa\uFFFDia', 'Compañía'],
-      ['Viña', 'Viña'],  // already correct but include for completeness
-      ['Vi\uFFFDa', 'Viña'],
-      ['Crianza', 'Crianza'],
-      ['Reserva', 'Reserva'],
-      ['Sat\uFFFDn', 'Satén'],
-      ['Caf\uFFFD', 'Café'],
-      ['Ros\uFFFD', 'Rosé'],
-      ['Cuv\uFFFDe', 'Cuvée'],
-      ['cuv\uFFFDe', 'cuvée'],
-      ['Brut\uFFFD', 'Bruté'],
-      ['Premi\uFFFDre', 'Première'],
-      ['Ch\uFFFDteau', 'Château'],
-      ['ch\uFFFDteau', 'château'],
-      ['C\uFFFDtes', 'Côtes'],
-      ['c\uFFFDtes', 'côtes'],
-      ['R\uFFFDserve', 'Réserve'],
-      ['r\uFFFDserve', 'réserve'],
-      ['Cuv\uFFFDe', 'Cuvée'],
-      ['Mill\uFFFDsime', 'Millésime'],
-      ['Premi\uFFFDr', 'Premiér'],
-      ['Cr\uFFFDmant', 'Crémant'],
-      ['S\uFFFDlection', 'Sélection'],
-      ['G\uFFFDn\uFFFDrique', 'Générique'],
-      // Single replacement character surrounded by word boundaries - best-effort fixes
-      ['Mu\uFFFDrte', 'Muérte'],
-      ['mu\uFFFDrte', 'muérte'],
-      ['Muertos', 'Muertos'], // already correct
-      ['M\uFFFDxico', 'México'],
-      ['m\uFFFDxico', 'méxico'],
-      ['Jalape\uFFFDo', 'Jalapeño'],
-      ['jalape\uFFFDo', 'jalapeño'],
-      ['Ag\uFFFDve', 'Agáve'],  // sometimes written with accent
-      ['Gonz\uFFFDlez', 'González'],
-      ['Guti\uFFFDrrez', 'Gutiérrez'],
-      ['Ram\uFFFDrez', 'Ramírez'],
-      ['Mart\uFFFDnez', 'Martínez'],
-      ['Hern\uFFFDndez', 'Hernández'],
-      ['L\uFFFDpez', 'López'],
-      ['P\uFFFDrez', 'Pérez'],
-      ['Garc\uFFFDa', 'García'],
-      ['Jim\uFFFDnez', 'Jiménez'],
-      ['Dom\uFFFDnguez', 'Domínguez'],
-      ['Rodr\uFFFDguez', 'Rodríguez'],
-      ['Fern\uFFFDndez', 'Fernández'],
-      ['S\uFFFDnchez', 'Sánchez'],
-      ['N\uFFFD\uFFFDez', 'Núñez'],
-      ['Ib\uFFFD\uFFFDez', 'Ibáñez'],
-      ['Ord\uFFFD\uFFFDez', 'Ordóñez'],
-      ['Mu\uFFFDoz', 'Muñoz'],
-      // Catalan/Italian wine terms
-      ['Regin\uFFFD', 'Reginó'],
-      ['Barbar\uFFFDsco', 'Barbarésco'],
+    // Context-based single-char replacements: infer accented character from surrounding letters
+    // Pattern: [before chars]\uFFFD[after chars] → replacement char
+    // These cover the vast majority of Spanish/French/Portuguese wine & spirit terms
+    const CONTEXT_RULES = [
+      // ñ — \uFFFD between vowel+consonant contexts typical for ñ
+      { before: /[Aa]$/, after: /^[oeaiu]/, char: 'ñ' },   // Año, Añejo, Cabaña
+      { before: /[Ii]$/, after: /^[oae]/, char: 'ñ' },     // Niño, Viña, Piña
+      { before: /[Uu]$/, after: /^[oe]/, char: 'ñ' },      // Muñoz, Muñeca
+      { before: /[Ee]$/, after: /^[oa]/, char: 'ñ' },      // Señor, Señal, Pequeño
+      // í
+      { before: /[Dd]$/, after: /^a/, char: 'í' },          // Día
+      { before: /[sc]$/, after: /^[cn]/, char: 'ó' },       // Edición, Colección
+      { before: /c$/, after: /^a/, char: 'í' },              // García
+      { before: /[Mm]$/, after: /^s/, char: 'ú' },          // Música
+      { before: /t$/, after: /^n/, char: 'í' },              // Martínez, Gutiérrez
+      { before: /m$/, after: /^n/, char: 'í' },              // Jiménez, Domínguez
+      { before: /r$/, after: /^g/, char: 'í' },              // Rodríguez
+      { before: /[Mm]$/, after: /^x/, char: 'é' },          // México
+      // é
+      { before: /[Cc]af$/, after: /^[^a-z]/, char: 'é' },   // Café (end of word)
+      { before: /[Rr]os$/, after: /^[^a-z]/, char: 'é' },   // Rosé (end of word)
+      { before: /[Cc]h$/, after: /^t/, char: 'â' },          // Château
+      { before: /[Cc]uv$/, after: /^e/, char: 'é' },         // Cuvée
+      { before: /[Cc]r$/, after: /^m/, char: 'é' },          // Crémant
+      { before: /[Rr]$/, after: /^s/, char: 'é' },           // Réserve
+      { before: /[Ss]$/, after: /^l/, char: 'é' },           // Sélection
+      { before: /n$/, after: /^ndez/, char: 'á' },           // Fernández, Hernández
+      { before: /p$/, after: /^ez/, char: 'é' },             // López, Pérez
+      { before: /l$/, after: /^s/, char: 'á' },              // Clásico
+      { before: /[Cc]$/, after: /^t/, char: 'ô' },           // Côtes
     ];
 
     // Process all three data tables
@@ -126,7 +71,6 @@ router.post('/fix-encoding', async (req, res) => {
     let totalFixed = 0;
 
     for (const table of tables) {
-      // Find rows that contain the replacement character
       const result = await pool.query(
         `SELECT id, user_id, data FROM ${table} WHERE data::text LIKE '%\uFFFD%'`
       );
@@ -135,16 +79,34 @@ router.post('/fix-encoding', async (req, res) => {
         let dataStr = JSON.stringify(row.data);
         let changed = false;
 
-        for (const [bad, good] of REPLACEMENTS) {
-          if (dataStr.includes(bad)) {
-            dataStr = dataStr.split(bad).join(good);
-            changed = true;
-          }
-        }
+        // Apply context-based replacements iteratively
+        let prevStr;
+        do {
+          prevStr = dataStr;
+          dataStr = dataStr.replace(
+            /(.{0,15})\uFFFD(.{0,15})/,
+            (match, before, after) => {
+              // Try each context rule
+              for (const rule of CONTEXT_RULES) {
+                if (rule.before.test(before) && rule.after.test(after)) {
+                  return before + rule.char + after;
+                }
+              }
+              // Fallback: if between two letters, guess based on common patterns
+              // Single \uFFFD after a vowel before consonant cluster → likely ñ
+              if (/[aeiou]$/i.test(before) && /^[aeiou]/i.test(after)) {
+                return before + 'ñ' + after;
+              }
+              // \uFFFD at end of word (before quote/comma/space) after consonant → likely é/ó
+              if (/[a-z]$/i.test(before) && /^["',\s\\}]/.test(after)) {
+                return before + 'é' + after;
+              }
+              return match; // can't determine — leave it
+            }
+          );
+          if (dataStr !== prevStr) changed = true;
+        } while (dataStr !== prevStr && dataStr.includes('\uFFFD'));
 
-        // Also do a final pass: any remaining lone \uFFFD between two lowercase letters
-        // is likely a missing accented vowel — we can't auto-fix those without context,
-        // but log them
         if (changed) {
           const newData = JSON.parse(dataStr);
           await pool.query(
@@ -167,9 +129,8 @@ router.post('/fix-encoding', async (req, res) => {
       remaining += result.rows.length;
       for (const row of result.rows) {
         const dataStr = JSON.stringify(row.data);
-        // Extract words around the replacement character
-        const matches = dataStr.match(/\w{0,10}\uFFFD\w{0,10}/g);
-        if (matches) remainingExamples.push(...matches.slice(0, 3));
+        const matches = dataStr.match(/.{0,12}\uFFFD.{0,12}/g);
+        if (matches) remainingExamples.push(...matches.slice(0, 5));
       }
     }
 
@@ -177,7 +138,7 @@ router.post('/fix-encoding', async (req, res) => {
       ok: true,
       fixed: totalFixed,
       remaining,
-      remainingExamples: remainingExamples.slice(0, 10),
+      remainingExamples: remainingExamples.slice(0, 15),
     });
   } catch (err) {
     console.error('Fix encoding error:', err);

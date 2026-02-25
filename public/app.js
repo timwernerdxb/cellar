@@ -2731,7 +2731,10 @@ async function fixEncoding() {
     if (data.ok) {
       let msg = `Fixed ${data.fixed} record(s).`;
       if (data.remaining > 0) {
-        msg += ` ${data.remaining} still have unknown characters.`;
+        msg += ` ${data.remaining} still have issues.`;
+        if (data.remainingExamples && data.remainingExamples.length) {
+          msg += ' Examples: ' + data.remainingExamples.join(' | ');
+        }
       }
       status.textContent = msg;
       status.style.color = data.remaining > 0 ? 'var(--warning)' : 'var(--success, #4caf50)';
