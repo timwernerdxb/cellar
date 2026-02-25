@@ -77,15 +77,11 @@ async function enterApp() {
   } catch {}
   // Hide settings elements for demo accounts
   if (isDemoAccount) {
+    const hiddenCards = ['Vision API', 'Import Collection', 'Data Management'];
     document.querySelectorAll('.settings-card').forEach(card => {
       const h3 = card.querySelector('h3');
-      if (h3 && h3.textContent.includes('Vision API')) card.style.display = 'none';
-    });
-    document.querySelectorAll('.settings-card').forEach(card => {
-      const h3 = card.querySelector('h3');
-      if (h3 && h3.textContent.includes('Data Management')) {
-        const resetBtn = card.querySelector('.btn-danger');
-        if (resetBtn) resetBtn.style.display = 'none';
+      if (h3 && hiddenCards.some(name => h3.textContent.includes(name))) {
+        card.style.display = 'none';
       }
     });
   }
@@ -1941,12 +1937,8 @@ async function capturePhoto() {
   canvas.getContext('2d').drawImage(video, 0, 0, w, h);
   const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
   closeCamera();
-  // Smart crop → blur → resize before sending to API
-  smartCropImage(rawUrl).then(cropped =>
-    applyBackgroundBlur(cropped).then(blurred =>
-      resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
-    )
-  );
+  // Resize before sending to API
+  resizeImageForVision(rawUrl, 1024).then(resized => processLabelImage(resized));
 }
 
 function handleImageUpload(event) {
@@ -1954,12 +1946,8 @@ function handleImageUpload(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    // Smart crop → blur → resize before sending to API
-    smartCropImage(e.target.result).then(cropped =>
-      applyBackgroundBlur(cropped).then(blurred =>
-        resizeImageForVision(blurred, 1024).then(resized => processLabelImage(resized))
-      )
-    );
+    // Resize before sending to API
+    resizeImageForVision(e.target.result, 1024).then(resized => processLabelImage(resized));
   };
   reader.readAsDataURL(file);
   event.target.value = '';
@@ -1980,133 +1968,6 @@ function resizeImageForVision(dataUrl, maxDim = 1024) {
       resolve(canvas.toDataURL('image/jpeg', 0.8));
     };
     img.onerror = () => resolve(dataUrl); // fallback to original
-    img.src = dataUrl;
-  });
-}
-
-// ============ SMART CROP (product detection) ============
-
-function smartCropImage(dataUrl) {
-  return new Promise(async (resolve) => {
-    const apiKey = localStorage.getItem(API_KEY_STORAGE);
-    if (!apiKey) { resolve(dataUrl); return; }
-    if (!checkDemoRateLimit()) { resolve(dataUrl); return; }
-
-    try {
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Look at this image. Find the main product (bottle, box, can, bag, or package) in the photo. Return a GENEROUS bounding box that includes the entire product with plenty of breathing room around it — do not crop tightly. Return ONLY a JSON object with the bounding box as percentages of the image dimensions: {"x": left%, "y": top%, "w": width%, "h": height%}. Values 0-100. If no product found return {"x":0,"y":0,"w":100,"h":100}.' },
-              { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
-            ]
-          }],
-          max_tokens: 100,
-          temperature: 0.1
-        })
-      });
-
-      if (!resp.ok) { console.warn('Smart crop API error:', resp.status); resolve(dataUrl); return; }
-
-      const data = await resp.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) { resolve(dataUrl); return; }
-
-      const box = JSON.parse(jsonMatch[0]);
-      if (typeof box.x !== 'number' || typeof box.y !== 'number' ||
-          typeof box.w !== 'number' || typeof box.h !== 'number') { resolve(dataUrl); return; }
-
-      // Skip if already well-framed (>90%) or suspiciously small (<10%)
-      if ((box.w > 90 && box.h > 90) || box.w < 10 || box.h < 10) { resolve(dataUrl); return; }
-
-      resolve(await cropToBox(dataUrl, box));
-    } catch (err) {
-      console.warn('Smart crop error:', err.message);
-      resolve(dataUrl);
-    }
-  });
-}
-
-function cropToBox(dataUrl, box) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const w = img.width, h = img.height;
-      const pad = 0.15; // 15% padding — generous breathing room
-      let sx = Math.max(0, (box.x / 100 - pad) * w);
-      let sy = Math.max(0, (box.y / 100 - pad) * h);
-      let sw = Math.min(w - sx, (box.w / 100 + pad * 2) * w);
-      let sh = Math.min(h - sy, (box.h / 100 + pad * 2) * h);
-      if (sx + sw > w) sw = w - sx;
-      if (sy + sh > h) sh = h - sy;
-      if (sw < 50 || sh < 50) { resolve(dataUrl); return; }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(sw);
-      canvas.height = Math.round(sh);
-      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
-
-// ============ BACKGROUND BLUR (portrait / bokeh effect) ============
-
-function applyBackgroundBlur(dataUrl, opts = {}) {
-  const blurPx = opts.blurStrength || 22;
-  const focusR = opts.focusRadius || 0.25;   // % of short edge for fully sharp zone
-  const fadeR  = opts.gradientWidth || 0.20;  // % of short edge for fade zone
-
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const w = img.width, h = img.height;
-      const shortEdge = Math.min(w, h);
-
-      // 1. Create blurred background canvas
-      const bgCanvas = document.createElement('canvas');
-      bgCanvas.width = w; bgCanvas.height = h;
-      const bgCtx = bgCanvas.getContext('2d');
-      bgCtx.filter = `blur(${blurPx}px)`;
-      // Draw slightly larger to avoid transparent blur edges
-      const pad = blurPx * 2;
-      bgCtx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
-      bgCtx.filter = 'none';
-
-      // 2. Create sharp foreground canvas with radial mask
-      const fgCanvas = document.createElement('canvas');
-      fgCanvas.width = w; fgCanvas.height = h;
-      const fgCtx = fgCanvas.getContext('2d');
-      // Draw sharp image
-      fgCtx.drawImage(img, 0, 0, w, h);
-      // Apply radial gradient mask — center opaque, edges transparent
-      fgCtx.globalCompositeOperation = 'destination-in';
-      const cx = w / 2, cy = h / 2;
-      const innerR = shortEdge * focusR;
-      const outerR = shortEdge * (focusR + fadeR);
-      const grad = fgCtx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
-      grad.addColorStop(0, 'rgba(0,0,0,1)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      fgCtx.fillStyle = grad;
-      fgCtx.fillRect(0, 0, w, h);
-
-      // 3. Composite: blurred bg + sharp center
-      const outCanvas = document.createElement('canvas');
-      outCanvas.width = w; outCanvas.height = h;
-      const outCtx = outCanvas.getContext('2d');
-      outCtx.drawImage(bgCanvas, 0, 0);
-      outCtx.drawImage(fgCanvas, 0, 0);
-
-      resolve(outCanvas.toDataURL('image/jpeg', 0.85));
-    };
-    img.onerror = () => resolve(dataUrl); // fallback
     img.src = dataUrl;
   });
 }
@@ -2199,21 +2060,18 @@ Use your knowledge to estimate price, critic score, drinking window, grape/rice 
 
     // Auto-set label photo as bottle image if no image chosen yet
     if (!pendingBottleImage && dataUrl) {
-      // Blur background, then resize label photo for bottle image (max 400px wide)
-      applyBackgroundBlur(dataUrl).then(blurred => {
-        const img = new Image();
-        img.onload = () => {
-          const maxW = 400;
-          const scale = Math.min(1, maxW / img.width);
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          const resized = canvas.toDataURL('image/jpeg', 0.8);
-          setBottleImagePreview(resized, resized);
-        };
-        img.src = blurred;
-      });
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 400;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const resized = canvas.toDataURL('image/jpeg', 0.8);
+        setBottleImagePreview(resized, resized);
+      };
+      img.src = dataUrl;
     }
 
     showToast(extracted.name ? `Recognized: ${extracted.name}` : 'Analysis complete — review fields.');
@@ -2530,9 +2388,7 @@ async function captureFindPhoto() {
   canvas.getContext('2d').drawImage(video, 0, 0);
   const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
   cancelFindScan();
-  const cropped = await smartCropImage(rawUrl);
-  const blurred = await applyBackgroundBlur(cropped);
-  const resized = await resizeImageForVision(blurred, 1024);
+  const resized = await resizeImageForVision(rawUrl, 1024);
   await processFindImage(resized);
 }
 
@@ -2541,9 +2397,7 @@ function handleFindImageUpload(event) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const cropped = await smartCropImage(e.target.result);
-    const blurred = await applyBackgroundBlur(cropped);
-    const resized = await resizeImageForVision(blurred, 1024);
+    const resized = await resizeImageForVision(e.target.result, 1024);
     await processFindImage(resized);
   };
   reader.readAsDataURL(file);
@@ -3049,209 +2903,6 @@ async function findSimilar(id, source) {
   }
 }
 
-// ============ BATCH BACKGROUND BLUR ============
-
-// Convert an image URL (external or proxy) to a base64 data URL via canvas
-function imageUrlToDataUrl(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const maxW = 400;
-      const scale = Math.min(1, maxW / img.width);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.onerror = () => reject(new Error('Failed to load image'));
-    // Use proxy for external URLs to avoid CORS
-    if (url.startsWith('http')) {
-      img.src = `/api/images/proxy?url=${encodeURIComponent(url)}`;
-    } else {
-      img.src = url;
-    }
-  });
-}
-
-async function blurAllBackgrounds() {
-  const btn = document.getElementById('blurBackgroundsBtn');
-  const status = document.getElementById('blurBackgroundsStatus');
-  if (!btn) return;
-  btn.disabled = true;
-  btn.textContent = 'Processing...';
-  status.textContent = '';
-  status.style.color = '';
-
-  let processed = 0;
-  let skipped = 0;
-
-  // Collect all items with images that haven't been blurred yet
-  const items = [];
-  cellar.forEach(b => {
-    if (b.imageUrl && !b.imageBlurred) {
-      items.push({ ref: b, source: 'cellar' });
-    } else if (b.imageUrl && b.imageBlurred) {
-      skipped++;
-    }
-  });
-  restaurantFinds.forEach(f => {
-    if (f.imageUrl && !f.imageBlurred) {
-      items.push({ ref: f, source: 'finds' });
-    } else if (f.imageUrl && f.imageBlurred) {
-      skipped++;
-    }
-  });
-
-  const total = items.length;
-  if (total === 0) {
-    status.textContent = skipped > 0 ? 'All images already blurred.' : 'No images found to blur.';
-    status.style.color = 'var(--text-muted)';
-    btn.disabled = false;
-    btn.textContent = 'Blur All Backgrounds';
-    return;
-  }
-
-  status.textContent = `Processing 0/${total} images...`;
-
-  try {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      status.textContent = `Processing ${i + 1}/${total} images...`;
-      try {
-        let srcUrl = item.ref.imageUrl;
-        // If it's an external URL, download and convert to base64 first
-        if (srcUrl.startsWith('http')) {
-          srcUrl = await imageUrlToDataUrl(srcUrl);
-        }
-        const blurred = await applyBackgroundBlur(srcUrl);
-        item.ref.imageUrl = blurred;
-        item.ref.imageBlurred = true;
-        processed++;
-      } catch (err) {
-        console.warn('Blur failed for', item.ref.name || 'item', ':', err.message);
-      }
-      // Yield to UI thread every few images
-      if (i % 3 === 0) await new Promise(r => setTimeout(r, 50));
-    }
-
-    // Save and sync
-    saveCellar(cellar);
-    saveFinds(restaurantFinds);
-
-    status.textContent = `Done! Blurred ${processed}/${total} images.${skipped ? ` ${skipped} already done.` : ''}`;
-    status.style.color = 'var(--success)';
-    showToast(`Blurred ${processed} photo backgrounds — syncing...`);
-    renderCellar();
-    renderFinds();
-    renderDashboard();
-  } catch (err) {
-    status.textContent = 'Error: ' + err.message;
-    status.style.color = 'var(--danger)';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Blur All Backgrounds';
-  }
-}
-
-// ============ BATCH SMART CROP ============
-
-async function smartCropAllPhotos() {
-  const btn = document.getElementById('smartCropBtn');
-  const status = document.getElementById('smartCropStatus');
-  if (!btn) return;
-
-  const apiKey = localStorage.getItem(API_KEY_STORAGE);
-  if (!apiKey) {
-    status.textContent = 'Add your OpenAI API key first.';
-    status.style.color = 'var(--danger)';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Processing...';
-  status.textContent = '';
-  status.style.color = '';
-
-  let processed = 0;
-  let skipped = 0;
-
-  const items = [];
-  cellar.forEach(b => {
-    if (b.imageUrl && !b.imageCropped) {
-      items.push({ ref: b, source: 'cellar' });
-    } else if (b.imageUrl && b.imageCropped) {
-      skipped++;
-    }
-  });
-  restaurantFinds.forEach(f => {
-    if (f.imageUrl && !f.imageCropped) {
-      items.push({ ref: f, source: 'finds' });
-    } else if (f.imageUrl && f.imageCropped) {
-      skipped++;
-    }
-  });
-
-  const total = items.length;
-  if (total === 0) {
-    status.textContent = skipped > 0 ? 'All images already cropped.' : 'No images found to crop.';
-    status.style.color = 'var(--text-muted)';
-    btn.disabled = false;
-    btn.textContent = 'Crop All Photos';
-    return;
-  }
-
-  status.textContent = `Processing 0/${total} images...`;
-
-  try {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      status.textContent = `Processing ${i + 1}/${total} images...`;
-      try {
-        let srcUrl = item.ref.imageUrl;
-        if (srcUrl.startsWith('http')) {
-          srcUrl = await imageUrlToDataUrl(srcUrl);
-        }
-        const cropped = await smartCropImage(srcUrl);
-        if (cropped !== srcUrl) {
-          // Crop changed — re-apply blur since composition changed
-          const blurred = await applyBackgroundBlur(cropped);
-          item.ref.imageUrl = blurred;
-          item.ref.imageCropped = true;
-          item.ref.imageBlurred = true;
-          processed++;
-        } else {
-          item.ref.imageCropped = true; // mark so we don't retry
-          skipped++;
-        }
-      } catch (err) {
-        console.warn('Smart crop failed for', item.ref.name || 'item', ':', err.message);
-      }
-      // Throttle API calls + yield to UI
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    saveCellar(cellar);
-    saveFinds(restaurantFinds);
-
-    status.textContent = `Done! Cropped ${processed} of ${total} images.${skipped ? ` ${skipped} skipped.` : ''}`;
-    status.style.color = 'var(--success)';
-    showToast(`Smart-cropped ${processed} photos`);
-    renderCellar();
-    renderFinds();
-    renderDashboard();
-
-    if (typeof syncFromServer === 'function') syncFromServer();
-  } catch (err) {
-    status.textContent = 'Error: ' + err.message;
-    status.style.color = 'var(--danger)';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Crop All Photos';
-  }
-}
-
 // ============ BOTTLE IMAGE ============
 
 let pendingBottleImage = null; // { url, dataUrl } — set before saving
@@ -3339,11 +2990,9 @@ function handleBottleImageUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  // Smart crop → blur, then resize to save storage (max 400px wide)
+  // Resize to save storage (max 400px wide)
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const cropped = await smartCropImage(e.target.result);
-    const blurred = await applyBackgroundBlur(cropped);
     const img = new Image();
     img.onload = () => {
       const maxW = 400;
@@ -3356,7 +3005,7 @@ function handleBottleImageUpload(event) {
       setBottleImagePreview(dataUrl, dataUrl);
       showToast('Photo added');
     };
-    img.src = blurred;
+    img.src = e.target.result;
   };
   reader.readAsDataURL(file);
   event.target.value = '';

@@ -211,7 +211,69 @@ app.post('/api/data-fix', async (req, res) => {
       fixes.push('Clase Azul Dia de Muertos Recuerdos: fresh image restored');
     }
 
-    // Fix 4: Reset crop AND blur flags so images can be reprocessed
+    // Fix 4: Restore images from demo account back to main account
+    // The demo account has the original (unprocessed) images copied from main before cropping/blurring
+    const demoUser = await pool.query(`SELECT id FROM users WHERE email = $1`, [DEMO_EMAIL]);
+    const mainUser = await pool.query(
+      `SELECT id FROM users WHERE is_demo IS NOT TRUE AND email != $1 ORDER BY created_at ASC LIMIT 1`, [DEMO_EMAIL]
+    );
+    let restoreCount = 0;
+    if (demoUser.rows.length > 0 && mainUser.rows.length > 0) {
+      const demoId = demoUser.rows[0].id;
+      const mainId = mainUser.rows[0].id;
+
+      // Restore bottle images from demo → main (match by bottle id)
+      const demoBottles = await pool.query(
+        `SELECT id, data FROM bottles WHERE user_id = $1 AND data->>'imageUrl' IS NOT NULL`, [demoId]
+      );
+      for (const demoRow of demoBottles.rows) {
+        const mainRow = await pool.query(
+          `SELECT data FROM bottles WHERE id = $1 AND user_id = $2`, [demoRow.id, mainId]
+        );
+        if (mainRow.rows.length > 0) {
+          const mainData = mainRow.rows[0].data;
+          const demoImageUrl = demoRow.data.imageUrl;
+          // Only restore if demo has an image and main's image is a data: URL (was processed)
+          if (demoImageUrl && mainData.imageUrl && mainData.imageUrl.startsWith('data:')) {
+            mainData.imageUrl = demoImageUrl;
+            mainData.imageCropped = false;
+            mainData.imageBlurred = false;
+            await pool.query(
+              'UPDATE bottles SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+              [JSON.stringify(mainData), demoRow.id, mainId]
+            );
+            restoreCount++;
+          }
+        }
+      }
+
+      // Restore find images from demo → main
+      const demoFinds = await pool.query(
+        `SELECT id, data FROM finds WHERE user_id = $1 AND data->>'imageUrl' IS NOT NULL`, [demoId]
+      );
+      for (const demoRow of demoFinds.rows) {
+        const mainRow = await pool.query(
+          `SELECT data FROM finds WHERE id = $1 AND user_id = $2`, [demoRow.id, mainId]
+        );
+        if (mainRow.rows.length > 0) {
+          const mainData = mainRow.rows[0].data;
+          const demoImageUrl = demoRow.data.imageUrl;
+          if (demoImageUrl && mainData.imageUrl && mainData.imageUrl.startsWith('data:')) {
+            mainData.imageUrl = demoImageUrl;
+            mainData.imageCropped = false;
+            mainData.imageBlurred = false;
+            await pool.query(
+              'UPDATE finds SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+              [JSON.stringify(mainData), demoRow.id, mainId]
+            );
+            restoreCount++;
+          }
+        }
+      }
+      if (restoreCount > 0) fixes.push(`Restored ${restoreCount} original images from demo account`);
+    }
+
+    // Fix 5: Reset crop AND blur flags on any remaining items
     const resetResult = await pool.query(
       `SELECT id, user_id, data FROM bottles WHERE data->>'imageCropped' = 'true' OR data->>'imageBlurred' = 'true'`
     );
