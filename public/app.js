@@ -271,6 +271,8 @@ async function syncToServer() {
 
 async function syncFromServer() {
   if (!currentUser) return;
+  // Cancel any pending upload so stale local data doesn't overwrite server data
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
   try {
     const resp = await fetch('/api/sync/download', { credentials: 'include' });
     if (!resp.ok) return;
