@@ -42,6 +42,166 @@ const fs = require('fs');
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// Demo account configuration
+const DEMO_EMAIL = 'test@test.com';
+const DEMO_PASSWORD = '123456';
+const DEMO_OPENAI_KEY = process.env.DEMO_OPENAI_KEY || '';
+
+// Seed demo account: POST /api/seed-demo (idempotent — safe to call multiple times)
+const bcryptSeed = require('bcryptjs');
+app.post('/api/seed-demo', async (req, res) => {
+  try {
+    // Find source user (Tim — the main account, first non-demo user with bottles)
+    const sourceUser = await pool.query(
+      `SELECT id FROM users WHERE is_demo IS NOT TRUE AND email != $1
+       ORDER BY created_at ASC LIMIT 1`, [DEMO_EMAIL]
+    );
+    if (sourceUser.rows.length === 0) return res.status(404).json({ error: 'No source user found' });
+    const sourceId = sourceUser.rows[0].id;
+
+    // Check if demo user already exists
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [DEMO_EMAIL]);
+    let demoId;
+
+    if (existing.rows.length > 0) {
+      demoId = existing.rows[0].id;
+      // Update password + key + flag
+      const hash = await bcryptSeed.hash(DEMO_PASSWORD, 12);
+      await pool.query(
+        `UPDATE users SET password_hash = $1, openai_key = $2, is_demo = true, name = 'Demo', updated_at = NOW() WHERE id = $3`,
+        [hash, DEMO_OPENAI_KEY, demoId]
+      );
+    } else {
+      // Create demo user
+      const hash = await bcryptSeed.hash(DEMO_PASSWORD, 12);
+      const result = await pool.query(
+        `INSERT INTO users (email, password_hash, name, openai_key, is_demo)
+         VALUES ($1, $2, 'Demo', $3, true) RETURNING id`,
+        [DEMO_EMAIL, hash, DEMO_OPENAI_KEY]
+      );
+      demoId = result.rows[0].id;
+    }
+
+    // Copy portfolio data from source user
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Clear existing demo data
+      await client.query('DELETE FROM bottles WHERE user_id = $1', [demoId]);
+      await client.query('DELETE FROM tastings WHERE user_id = $1', [demoId]);
+      await client.query('DELETE FROM finds WHERE user_id = $1', [demoId]);
+
+      // Copy bottles
+      await client.query(
+        `INSERT INTO bottles (id, user_id, data, updated_at)
+         SELECT id, $1, data, NOW() FROM bottles WHERE user_id = $2`,
+        [demoId, sourceId]
+      );
+
+      // Copy tastings
+      await client.query(
+        `INSERT INTO tastings (id, user_id, data, updated_at)
+         SELECT id, $1, data, NOW() FROM tastings WHERE user_id = $2`,
+        [demoId, sourceId]
+      );
+
+      // Copy finds
+      await client.query(
+        `INSERT INTO finds (id, user_id, data, updated_at)
+         SELECT id, $1, data, NOW() FROM finds WHERE user_id = $2`,
+        [demoId, sourceId]
+      );
+
+      // Generate share link for demo account
+      const crypto = require('crypto');
+      const shareToken = crypto.randomUUID();
+      await client.query(
+        `UPDATE users SET share_token = $1, share_show_values = true WHERE id = $2`,
+        [shareToken, demoId]
+      );
+
+      await client.query('COMMIT');
+
+      const bottleCount = await pool.query('SELECT count(*) FROM bottles WHERE user_id = $1', [demoId]);
+      const findCount = await pool.query('SELECT count(*) FROM finds WHERE user_id = $1', [demoId]);
+
+      res.json({
+        ok: true,
+        demoId,
+        email: DEMO_EMAIL,
+        bottles: parseInt(bottleCount.rows[0].count),
+        finds: parseInt(findCount.rows[0].count),
+        shareToken,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('Seed demo error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// One-time data fixes
+app.post('/api/data-fix', async (req, res) => {
+  try {
+    const fixes = [];
+
+    // Fix 1: Dom Perignon 2004 — update consumption date to March 2, 2023
+    const dpResult = await pool.query(
+      `SELECT id, user_id, data FROM bottles WHERE data->>'name' ILIKE '%Dom P_rignon%' AND data->>'vintage' = '2004'`
+    );
+    for (const row of dpResult.rows) {
+      const data = row.data;
+      // Update consumption history dates
+      if (data.consumptionHistory && data.consumptionHistory.length > 0) {
+        data.consumptionHistory = data.consumptionHistory.map(entry => {
+          entry.date = '2023-03-02';
+          return entry;
+        });
+      }
+      // Also set consumedDate if present
+      if (data.consumedDate) data.consumedDate = '2023-03-02';
+      await pool.query(
+        'UPDATE bottles SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(data), row.id, row.user_id]
+      );
+      fixes.push('Dom Perignon 2004: consumption date → 2023-03-02');
+    }
+
+    // Fix 2: Angelica Zapata find — update image, date, location
+    const azResult = await pool.query(
+      `SELECT id, user_id, data FROM finds WHERE data->>'name' ILIKE '%Angelica Zapata%' OR data->>'name' ILIKE '%Angélica Zapata%'`
+    );
+    for (const row of azResult.rows) {
+      const data = row.data;
+      data.imageUrl = 'https://www.wine-window.com/cdn/shop/files/web_angelica_zapata.png?v=1733856247';
+      data.imageBlurred = false;
+      data.imageCropped = false;
+      data.foundDate = '2024-12-10';
+      data.date = '2024-12-10';
+      data.restaurantName = 'São Paulo, BR';
+      data.venue = 'São Paulo, BR';
+      data.city = 'São Paulo';
+      data.country = 'BR';
+      await pool.query(
+        'UPDATE finds SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(data), row.id, row.user_id]
+      );
+      fixes.push('Angelica Zapata: image + date (2024-12-10) + location (São Paulo, BR)');
+    }
+
+    res.json({ ok: true, fixes });
+  } catch (err) {
+    console.error('Data fix error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/bottles', require('./routes/bottles'));

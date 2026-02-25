@@ -26,6 +26,8 @@ function isSpiritOrWhiskey(type) { return isWhiskey(type) || isTequila(type) || 
 // ============ AUTH STATE ============
 
 let currentUser = null;
+let isDemoAccount = false;
+const DEMO_RATE_LIMIT = { maxPerHour: 20, calls: [], };
 let syncTimer = null;
 let authMode = 'login'; // 'login' or 'register'
 
@@ -59,6 +61,7 @@ function showWelcome() {
 
 async function enterApp() {
   document.body.classList.remove('no-auth');
+  isDemoAccount = !!(currentUser && currentUser.isDemo);
   updateAuthUI();
   // Load data from server
   await syncFromServer();
@@ -72,6 +75,20 @@ async function enterApp() {
       }
     }
   } catch {}
+  // Hide settings elements for demo accounts
+  if (isDemoAccount) {
+    document.querySelectorAll('.settings-card').forEach(card => {
+      const h3 = card.querySelector('h3');
+      if (h3 && h3.textContent.includes('Vision API')) card.style.display = 'none';
+    });
+    document.querySelectorAll('.settings-card').forEach(card => {
+      const h3 = card.querySelector('h3');
+      if (h3 && h3.textContent.includes('Data Management')) {
+        const resetBtn = card.querySelector('.btn-danger');
+        if (resetBtn) resetBtn.style.display = 'none';
+      }
+    });
+  }
   switchView('dashboard');
 }
 
@@ -729,6 +746,7 @@ async function runBatchScoring() {
   // Process ALL items (bottles + finds) in batches of 10
   const batchSize = 10;
   for (let i = 0; i < allUnscored.length; i += batchSize) {
+    if (!checkDemoRateLimit()) break;
     const batch = allUnscored.slice(i, i + batchSize);
     const prompt = batch.map((b, idx) => {
       const parts = [b.name, b.producer, b.type, b.region, b.vintage ? `${b.vintage}` : null, b.grape].filter(Boolean);
@@ -1973,6 +1991,7 @@ function smartCropImage(dataUrl) {
   return new Promise(async (resolve) => {
     const apiKey = localStorage.getItem(API_KEY_STORAGE);
     if (!apiKey) { resolve(dataUrl); return; }
+    if (!checkDemoRateLimit()) { resolve(dataUrl); return; }
 
     try {
       const resp = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -2109,6 +2128,7 @@ async function processLabelImage(dataUrl) {
     showToast('Add your OpenAI API key in Settings first.');
     return;
   }
+  if (!checkDemoRateLimit()) { hideProcessing(); return; }
 
   try {
     const el = document.querySelector('.scan-processing p');
@@ -2535,6 +2555,7 @@ async function processFindImage(dataUrl) {
   document.getElementById('findProcessing').style.display = 'flex';
   const apiKey = localStorage.getItem(API_KEY_STORAGE);
   if (!apiKey) { document.getElementById('findProcessing').style.display = 'none'; showToast('Add your OpenAI API key in Settings first'); return; }
+  if (!checkDemoRateLimit()) { document.getElementById('findProcessing').style.display = 'none'; return; }
 
   // Capture GPS
   let gpsPosition = null;
@@ -2798,6 +2819,21 @@ async function toggleShareValues() {
   } catch { showToast('Failed to update'); }
 }
 
+// ============ DEMO RATE LIMITING ============
+
+function checkDemoRateLimit() {
+  if (!isDemoAccount) return true;
+  const now = Date.now();
+  const oneHourAgo = now - 60 * 60 * 1000;
+  DEMO_RATE_LIMIT.calls = DEMO_RATE_LIMIT.calls.filter(t => t > oneHourAgo);
+  if (DEMO_RATE_LIMIT.calls.length >= DEMO_RATE_LIMIT.maxPerHour) {
+    showToast(`Demo limit: ${DEMO_RATE_LIMIT.maxPerHour} AI requests per hour. Try again later.`);
+    return false;
+  }
+  DEMO_RATE_LIMIT.calls.push(now);
+  return true;
+}
+
 // ============ SETTINGS ============
 
 async function saveApiKey() {
@@ -2852,6 +2888,7 @@ function exportData() {
 }
 
 function clearAllData() {
+  if (isDemoAccount) { showToast('Cannot reset data on demo account'); return; }
   if (!confirm('This will delete all bottles and tasting notes. Are you sure?')) return;
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(TASTINGS_KEY);
@@ -2962,6 +2999,8 @@ async function findSimilar(id, source) {
   ].filter(Boolean).join(', ');
 
   const prompt = `Given this ${item.type || 'bottle'}: ${details} — suggest 5 similar ${catLabel} that someone who enjoys this would also like. For each, give: name, producer, region, approximate price (USD), and a brief one-sentence reason why it's similar. Return ONLY a JSON array with objects having keys: name, producer, region, price, reason. No markdown, no explanation.`;
+
+  if (!checkDemoRateLimit()) { container.innerHTML = ''; return; }
 
   try {
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {

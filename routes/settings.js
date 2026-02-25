@@ -16,10 +16,13 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Update OpenAI key
+// Update OpenAI key (blocked for demo accounts)
 router.put('/openai-key', async (req, res) => {
   try {
     const pool = req.app.locals.pool;
+    // Check if demo account
+    const userCheck = await pool.query('SELECT is_demo FROM users WHERE id = $1', [req.userId]);
+    if (userCheck.rows[0]?.is_demo) return res.status(403).json({ error: 'Cannot change key on demo account' });
     const { key } = req.body;
     await pool.query('UPDATE users SET openai_key = $1, updated_at = NOW() WHERE id = $2', [key || null, req.userId]);
     res.json({ ok: true });

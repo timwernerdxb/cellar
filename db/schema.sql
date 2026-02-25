@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS finds (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS share_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS share_show_values BOOLEAN DEFAULT false;
 
+-- Demo account flag
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT false;
+
 CREATE INDEX IF NOT EXISTS idx_bottles_user ON bottles(user_id);
 CREATE INDEX IF NOT EXISTS idx_tastings_user ON tastings(user_id);
 CREATE INDEX IF NOT EXISTS idx_finds_user ON finds(user_id);
