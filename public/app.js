@@ -2935,6 +2935,30 @@ async function findSimilar(id, source) {
 
 // ============ BATCH BACKGROUND BLUR ============
 
+// Convert an image URL (external or proxy) to a base64 data URL via canvas
+function imageUrlToDataUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const maxW = 400;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    // Use proxy for external URLs to avoid CORS
+    if (url.startsWith('http')) {
+      img.src = `/api/images/proxy?url=${encodeURIComponent(url)}`;
+    } else {
+      img.src = url;
+    }
+  });
+}
+
 async function blurAllBackgrounds() {
   const btn = document.getElementById('blurBackgroundsBtn');
   const status = document.getElementById('blurBackgroundsStatus');
@@ -2946,28 +2970,27 @@ async function blurAllBackgrounds() {
 
   let processed = 0;
   let skipped = 0;
-  let total = 0;
 
-  // Collect all items with base64 images
+  // Collect all items with images that haven't been blurred yet
   const items = [];
   cellar.forEach(b => {
-    if (b.imageUrl && b.imageUrl.startsWith('data:') && !b.imageBlurred) {
+    if (b.imageUrl && !b.imageBlurred) {
       items.push({ ref: b, source: 'cellar' });
-    } else if (b.imageUrl) {
+    } else if (b.imageUrl && b.imageBlurred) {
       skipped++;
     }
   });
   restaurantFinds.forEach(f => {
-    if (f.imageUrl && f.imageUrl.startsWith('data:') && !f.imageBlurred) {
+    if (f.imageUrl && !f.imageBlurred) {
       items.push({ ref: f, source: 'finds' });
-    } else if (f.imageUrl) {
+    } else if (f.imageUrl && f.imageBlurred) {
       skipped++;
     }
   });
 
-  total = items.length;
+  const total = items.length;
   if (total === 0) {
-    status.textContent = skipped > 0 ? 'All images already processed.' : 'No images found to blur.';
+    status.textContent = skipped > 0 ? 'All images already blurred.' : 'No images found to blur.';
     status.style.color = 'var(--text-muted)';
     btn.disabled = false;
     btn.textContent = 'Blur All Backgrounds';
@@ -2981,12 +3004,17 @@ async function blurAllBackgrounds() {
       const item = items[i];
       status.textContent = `Processing ${i + 1}/${total} images...`;
       try {
-        const blurred = await applyBackgroundBlur(item.ref.imageUrl);
+        let srcUrl = item.ref.imageUrl;
+        // If it's an external URL, download and convert to base64 first
+        if (srcUrl.startsWith('http')) {
+          srcUrl = await imageUrlToDataUrl(srcUrl);
+        }
+        const blurred = await applyBackgroundBlur(srcUrl);
         item.ref.imageUrl = blurred;
         item.ref.imageBlurred = true;
         processed++;
       } catch (err) {
-        console.warn('Blur failed for item:', err);
+        console.warn('Blur failed for', item.ref.name || 'item', ':', err.message);
       }
       // Yield to UI thread every few images
       if (i % 3 === 0) await new Promise(r => setTimeout(r, 50));
