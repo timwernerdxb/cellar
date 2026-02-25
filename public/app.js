@@ -2597,7 +2597,7 @@ async function loadShareStatus() {
     const revokeBtn = document.getElementById('shareRevokeBtn');
     const toggleEl = document.getElementById('shareShowValues');
     if (data.token) {
-      linkInput.value = 'https://go.mycellar.one' + data.url;
+      linkInput.value = 'https://app.mycellar.one' + data.url;
       linkInput.style.display = 'block';
       genBtn.style.display = 'none';
       copyBtn.style.display = 'inline-flex';
