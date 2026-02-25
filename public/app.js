@@ -2717,8 +2717,6 @@ function clearAllData() {
 }
 
 async function fixEncoding() {
-  const token = localStorage.getItem('vino_token');
-  if (!token) { showToast('Please sign in first'); return; }
   const btn = document.getElementById('fixEncodingBtn');
   const status = document.getElementById('fixEncodingStatus');
   btn.disabled = true;
@@ -2727,7 +2725,7 @@ async function fixEncoding() {
   try {
     const resp = await fetch('/api/settings/fix-encoding', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
+      credentials: 'include',
     });
     const data = await resp.json();
     if (data.ok) {
