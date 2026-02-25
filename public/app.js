@@ -920,134 +920,175 @@ window.addEventListener('resize', () => {
   }, 300);
 });
 
+const TYPE_COLORS = {
+  Red: '#8B1A1A', White: '#C9A96E', 'Rosé': '#E8A0BF', Sparkling: '#7FB3D3',
+  Champagne: '#D4AF37', Dessert: '#D4A574', Fortified: '#6C3483',
+  Scotch: '#B8860B', Bourbon: '#D2691E', Irish: '#228B22', Japanese: '#C41E3A',
+  Rye: '#8B4513', 'Single Malt': '#DAA520', Blended: '#A0522D', Tennessee: '#CD853F',
+  Tequila: '#2E86AB', Mezcal: '#567D2E',
+  Junmai: '#C45B28', Ginjo: '#E07B39', Daiginjo: '#D4A574', Nigori: '#F5DEB3', 'Sparkling Sake': '#7FB3D3', Sake: '#C9A96E',
+  Rum: '#A0522D', Cognac: '#7B3F00',
+  Brandy: '#9B6B43', Gin: '#4682B4', Vodka: '#8FA8C8', 'Other Spirit': '#808080',
+};
+const CAT_COLORS = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Sake: '#C45B28', Spirit: '#6C3483' };
+const BAR_PALETTE = ['#8B1A1A', '#B8860B', '#2E86AB', '#6C3483', '#228B22', '#C41E3A', '#D2691E', '#4682B4', '#567D2E', '#9B6B43'];
+
+// ---- Mobile-native chart renderers (pure HTML/CSS, no Chart.js) ----
+
+function renderMobileBarList(sorted, total, colorMap, container) {
+  container.innerHTML = sorted.map(([label, count]) => {
+    const pct = total > 0 ? (count / total * 100) : 0;
+    const color = colorMap[label] || colorMap[Object.keys(colorMap)[sorted.indexOf([label, count]) % Object.keys(colorMap).length]] || '#999';
+    const bg = typeof colorMap === 'object' ? (colorMap[label] || '#999') : '#999';
+    return `
+      <div class="m-bar-row">
+        <div class="m-bar-label">${escHTML(label)}</div>
+        <div class="m-bar-track">
+          <div class="m-bar-fill" style="width:${Math.max(pct, 2)}%;background:${bg}"></div>
+        </div>
+        <div class="m-bar-value">${count}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderMobileSegmentBar(entries, total, colorMap, container) {
+  if (entries.length === 0) { container.innerHTML = '<div class="empty-state"><p>No data</p></div>'; return; }
+  const segmentsHTML = entries.map(([label, count]) => {
+    const pct = total > 0 ? (count / total * 100) : 0;
+    const color = colorMap[label] || '#999';
+    return `<div class="m-seg-piece" style="width:${Math.max(pct, 3)}%;background:${color}" title="${label}: ${count}"></div>`;
+  }).join('');
+  const legendHTML = entries.map(([label, count]) => {
+    const color = colorMap[label] || '#999';
+    const pct = total > 0 ? Math.round(count / total * 100) : 0;
+    return `<div class="m-seg-legend-item"><span class="m-seg-dot" style="background:${color}"></span><span class="m-seg-name">${escHTML(label)}</span><span class="m-seg-count">${count} (${pct}%)</span></div>`;
+  }).join('');
+  container.innerHTML = `
+    <div class="m-seg-bar">${segmentsHTML}</div>
+    <div class="m-seg-legend">${legendHTML}</div>`;
+}
+
 function renderTypeChart() {
-  const ctx = document.getElementById('typeChart');
-  if (typeChartInstance) typeChartInstance.destroy();
+  const mobile = isMobileView();
   const types = {};
   cellar.filter(w => w.status !== 'consumed').forEach(w => { types[w.type] = (types[w.type] || 0) + (parseInt(w.quantity) || 1); });
   let sorted = Object.entries(types).sort((a, b) => b[1] - a[1]);
-  const colors = {
-    Red: '#8B1A1A', White: '#C9A96E', 'Rosé': '#E8A0BF', Sparkling: '#7FB3D3',
-    Champagne: '#D4AF37', Dessert: '#D4A574', Fortified: '#6C3483',
-    Scotch: '#B8860B', Bourbon: '#D2691E', Irish: '#228B22', Japanese: '#C41E3A',
-    Rye: '#8B4513', 'Single Malt': '#DAA520', Blended: '#A0522D', Tennessee: '#CD853F',
-    Tequila: '#2E86AB', Mezcal: '#567D2E',
-    Junmai: '#C45B28', Ginjo: '#E07B39', Daiginjo: '#D4A574', Nigori: '#F5DEB3', 'Sparkling Sake': '#7FB3D3', Sake: '#C9A96E',
-    Rum: '#A0522D', Cognac: '#7B3F00',
-    Brandy: '#9B6B43', Gin: '#4682B4', Vodka: '#8FA8C8', 'Other Spirit': '#808080',
-  };
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const mobile = isMobileView();
+  const total = sorted.reduce((s, e) => s + e[1], 0);
 
-  // On mobile, group small types into "Other" to keep legend manageable
-  if (mobile && sorted.length > 6) {
-    const top = sorted.slice(0, 5);
-    const rest = sorted.slice(5);
-    const otherTotal = rest.reduce((s, e) => s + e[1], 0);
-    if (otherTotal > 0) top.push(['Other', otherTotal]);
-    sorted = top;
+  if (mobile) {
+    // Render pure HTML bars instead of Chart.js
+    const ctx = document.getElementById('typeChart');
+    const chartWrap = ctx.closest('.chart-wrap');
+    if (chartWrap) { chartWrap.style.display = 'none'; }
+    // Get or create mobile container
+    const card = ctx.closest('.chart-card');
+    let mobileEl = card.querySelector('.m-chart-mobile');
+    if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
+    mobileEl.style.display = 'block';
+    // Group small types into "Other" if > 8
+    if (sorted.length > 8) {
+      const top = sorted.slice(0, 7);
+      const rest = sorted.slice(7);
+      const otherTotal = rest.reduce((s, e) => s + e[1], 0);
+      if (otherTotal > 0) top.push(['Other', otherTotal]);
+      sorted = top;
+    }
+    renderMobileSegmentBar(sorted, total, TYPE_COLORS, mobileEl);
+    return;
   }
 
-  // Dynamically size container based on legend items
+  // Desktop: use Chart.js
+  const ctx = document.getElementById('typeChart');
   const chartWrap = ctx.closest('.chart-wrap');
-  if (chartWrap && mobile) {
-    const h = Math.max(320, 200 + sorted.length * 28);
-    chartWrap.style.setProperty('height', h + 'px', 'important');
-    chartWrap.style.setProperty('min-height', h + 'px', 'important');
-  } else if (chartWrap) {
-    chartWrap.style.removeProperty('height');
-    chartWrap.style.removeProperty('min-height');
-  }
+  if (chartWrap) { chartWrap.style.display = ''; chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
+  const card = ctx.closest('.chart-card');
+  const mobileEl = card.querySelector('.m-chart-mobile');
+  if (mobileEl) mobileEl.style.display = 'none';
 
+  if (typeChartInstance) typeChartInstance.destroy();
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   typeChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: sorted.map(s => s[0]),
       datasets: [{
         data: sorted.map(s => s[1]),
-        backgroundColor: sorted.map(s => colors[s[0]] || '#999'),
+        backgroundColor: sorted.map(s => TYPE_COLORS[s[0]] || '#999'),
         borderWidth: 2,
         borderColor: isDark ? '#1A1A1E' : '#FFFFFF',
         hoverOffset: 6,
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: mobile ? '50%' : '62%',
-      layout: { padding: mobile ? { top: 4, bottom: 4 } : {} },
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
       plugins: {
         legend: {
-          position: mobile ? 'bottom' : 'right',
+          position: 'right',
           labels: {
-            padding: mobile ? 6 : 12,
-            usePointStyle: true,
-            pointStyleWidth: mobile ? 8 : 10,
+            padding: 12, usePointStyle: true, pointStyleWidth: 10,
             color: isDark ? '#A8A4A0' : '#6B6560',
-            font: { family: 'DM Sans', size: mobile ? 11 : 11 }
+            font: { family: 'DM Sans', size: 11 }
           }
         },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${ctx.label}: ${ctx.parsed} bottle${ctx.parsed !== 1 ? 's' : ''}`
-          }
-        }
+        tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed} bottle${ctx.parsed !== 1 ? 's' : ''}` } }
       }
     }
   });
 }
 
 function renderRegionChart() {
-  const ctx = document.getElementById('regionChart');
-  if (regionChartInstance) regionChartInstance.destroy();
+  const mobile = isMobileView();
   const regions = {};
   cellar.filter(w => w.status !== 'consumed').forEach(w => { const r = (w.region || 'Unknown').split(',')[0].trim(); regions[r] = (regions[r] || 0) + (parseInt(w.quantity) || 1); });
-  const mobile = isMobileView();
-  const maxRegions = mobile ? 7 : 10;
+  const maxRegions = mobile ? 8 : 10;
   const sorted = Object.entries(regions).sort((a, b) => b[1] - a[1]).slice(0, maxRegions);
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const barPalette = ['#8B1A1A', '#B8860B', '#2E86AB', '#6C3483', '#228B22', '#C41E3A', '#D2691E', '#4682B4', '#567D2E', '#9B6B43'];
+  const total = sorted.reduce((s, e) => s + e[1], 0);
 
-  // Dynamically set container height based on number of bars
-  const chartWrap = ctx.closest('.chart-wrap');
-  if (chartWrap) {
-    const barH = mobile ? 36 : 32;
-    const h = Math.max(160, sorted.length * barH + 60);
-    chartWrap.style.setProperty('height', h + 'px', 'important');
-    chartWrap.style.setProperty('min-height', h + 'px', 'important');
+  if (mobile) {
+    const ctx = document.getElementById('regionChart');
+    const chartWrap = ctx.closest('.chart-wrap');
+    if (chartWrap) { chartWrap.style.display = 'none'; }
+    const card = ctx.closest('.chart-card');
+    let mobileEl = card.querySelector('.m-chart-mobile');
+    if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
+    mobileEl.style.display = 'block';
+    // Create color map for regions
+    const regionColors = {};
+    sorted.forEach(([label], i) => { regionColors[label] = BAR_PALETTE[i % BAR_PALETTE.length]; });
+    renderMobileBarList(sorted, total, regionColors, mobileEl);
+    return;
   }
+
+  // Desktop: Chart.js
+  const ctx = document.getElementById('regionChart');
+  const chartWrap = ctx.closest('.chart-wrap');
+  if (chartWrap) { chartWrap.style.display = ''; chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
+  const card = ctx.closest('.chart-card');
+  const mobileEl = card.querySelector('.m-chart-mobile');
+  if (mobileEl) mobileEl.style.display = 'none';
+
+  if (regionChartInstance) regionChartInstance.destroy();
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const barH = 32;
+  const h = Math.max(160, sorted.length * barH + 60);
+  if (chartWrap) { chartWrap.style.setProperty('height', h + 'px', 'important'); chartWrap.style.setProperty('min-height', h + 'px', 'important'); }
 
   regionChartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: sorted.map(s => mobile && s[0].length > 12 ? s[0].slice(0, 11) + '…' : s[0]),
+      labels: sorted.map(s => s[0]),
       datasets: [{
         data: sorted.map(s => s[1]),
-        backgroundColor: sorted.map((_, i) => barPalette[i % barPalette.length] + (isDark ? 'CC' : 'BB')),
-        borderRadius: 4,
-        barThickness: mobile ? 16 : 22,
+        backgroundColor: sorted.map((_, i) => BAR_PALETTE[i % BAR_PALETTE.length] + (isDark ? 'CC' : 'BB')),
+        borderRadius: 4, barThickness: 22,
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${ctx.parsed.x} bottle${ctx.parsed.x !== 1 ? 's' : ''}`
-          }
-        }
-      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.parsed.x} bottle${ctx.parsed.x !== 1 ? 's' : ''}` } } },
       scales: {
-        x: {
-          grid: { color: isDark ? '#2A2A30' : '#E8E4DE' },
-          ticks: { color: isDark ? '#9B9590' : '#6B6560', font: { family: 'DM Sans', size: mobile ? 9 : 11 }, stepSize: 1 }
-        },
-        y: {
-          grid: { display: false },
-          ticks: {
-            color: isDark ? '#A8A4A0' : '#6B6560',
-            font: { family: 'DM Sans', size: mobile ? 10 : 11 },
-          }
-        }
+        x: { grid: { color: isDark ? '#2A2A30' : '#E8E4DE' }, ticks: { color: isDark ? '#9B9590' : '#6B6560', font: { family: 'DM Sans', size: 11 }, stepSize: 1 } },
+        y: { grid: { display: false }, ticks: { color: isDark ? '#A8A4A0' : '#6B6560', font: { family: 'DM Sans', size: 11 } } }
       }
     }
   });
@@ -1055,9 +1096,7 @@ function renderRegionChart() {
 
 let categoryChartInstance = null;
 function renderCategoryChart() {
-  const ctx = document.getElementById('categoryChart');
-  if (!ctx) return;
-  if (categoryChartInstance) categoryChartInstance.destroy();
+  const mobile = isMobileView();
   const cats = { Wine: 0, Whiskey: 0, Tequila: 0, Sake: 0, Spirit: 0 };
   cellar.filter(w => w.status !== 'consumed').forEach(w => {
     const qty = parseInt(w.quantity) || 1;
@@ -1067,55 +1106,59 @@ function renderCategoryChart() {
     else if (SPIRIT_TYPES.includes(w.type)) cats.Spirit += qty;
     else cats.Wine += qty;
   });
-  // Remove empty categories
   Object.keys(cats).forEach(k => { if (cats[k] === 0) delete cats[k]; });
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const catColors = { Wine: '#8B1A1A', Whiskey: '#B8860B', Tequila: '#2E86AB', Sake: '#C45B28', Spirit: '#6C3483' };
-  const mobile = isMobileView();
   const catKeys = Object.keys(cats);
+  const catEntries = catKeys.map(k => [k, cats[k]]);
+  const total = catEntries.reduce((s, e) => s + e[1], 0);
 
-  // Dynamically size container
-  const chartWrap = ctx.closest('.chart-wrap');
-  if (chartWrap && mobile) {
-    const h = Math.max(300, 180 + catKeys.length * 28);
-    chartWrap.style.setProperty('height', h + 'px', 'important');
-    chartWrap.style.setProperty('min-height', h + 'px', 'important');
-  } else if (chartWrap) {
-    chartWrap.style.removeProperty('height');
-    chartWrap.style.removeProperty('min-height');
+  if (mobile) {
+    const ctx = document.getElementById('categoryChart');
+    if (!ctx) return;
+    const chartWrap = ctx.closest('.chart-wrap');
+    if (chartWrap) { chartWrap.style.display = 'none'; }
+    const card = ctx.closest('.chart-card');
+    let mobileEl = card.querySelector('.m-chart-mobile');
+    if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
+    mobileEl.style.display = 'block';
+    renderMobileSegmentBar(catEntries, total, CAT_COLORS, mobileEl);
+    return;
   }
 
+  // Desktop: Chart.js
+  const ctx = document.getElementById('categoryChart');
+  if (!ctx) return;
+  const chartWrap = ctx.closest('.chart-wrap');
+  if (chartWrap) { chartWrap.style.display = ''; chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
+  const card = ctx.closest('.chart-card');
+  const mobileEl = card.querySelector('.m-chart-mobile');
+  if (mobileEl) mobileEl.style.display = 'none';
+
+  if (categoryChartInstance) categoryChartInstance.destroy();
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   categoryChartInstance = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: catKeys,
       datasets: [{
         data: Object.values(cats),
-        backgroundColor: catKeys.map(k => catColors[k]),
+        backgroundColor: catKeys.map(k => CAT_COLORS[k]),
         borderWidth: 2,
         borderColor: isDark ? '#1A1A1E' : '#FFFFFF',
         hoverOffset: 4,
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false, cutout: mobile ? '45%' : '70%',
-      layout: { padding: mobile ? { top: 4, bottom: 4 } : {} },
+      responsive: true, maintainAspectRatio: false, cutout: '70%',
       plugins: {
         legend: {
           position: 'bottom',
           labels: {
-            padding: mobile ? 6 : 14,
-            usePointStyle: true,
-            pointStyleWidth: mobile ? 8 : 10,
+            padding: 14, usePointStyle: true, pointStyleWidth: 10,
             color: isDark ? '#A8A4A0' : '#6B6560',
-            font: { family: 'DM Sans', size: mobile ? 11 : 12 }
+            font: { family: 'DM Sans', size: 12 }
           }
         },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` ${ctx.label}: ${ctx.parsed} bottle${ctx.parsed !== 1 ? 's' : ''}`
-          }
-        }
+        tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed} bottle${ctx.parsed !== 1 ? 's' : ''}` } }
       }
     }
   });
@@ -1662,11 +1705,14 @@ function restockBottle(id) {
 }
 
 function removeWine(id) {
+  if (!confirm('Remove this bottle from your collection?')) return;
   const w = cellar.find(b => b.id === id);
   cellar = cellar.filter(b => b.id !== id);
-  saveCellar(cellar); closeWineModal();
+  saveCellar(cellar);
+  closeWineModal();
   showToast(`${w ? w.name : 'Bottle'} removed`);
-  renderCellar(); renderDashboard();
+  // Re-render after modal close animation
+  setTimeout(() => { renderCellar(); renderDashboard(); }, 50);
 }
 
 // ============ CAMERA & SCANNING FLOW ============
@@ -1995,16 +2041,15 @@ function renderFinds() {
   }
 
   grid.innerHTML = finds.map(f => {
-    const imgSrc = f.imageUrl ? (f.imageUrl.startsWith('data:') || f.imageUrl.startsWith('/') ? f.imageUrl : `/api/images/proxy?url=${encodeURIComponent(f.imageUrl)}`) : '';
     return `
-      <div class="find-card" onclick="openFindModal('${f.id}')">
-        ${imgSrc ? `<div class="find-card-image"><img src="${imgSrc}" alt="${escHTML(f.name)}" onerror="this.parentElement.style.display='none'"></div>` : ''}
+      <div class="find-card find-card-compact" onclick="openFindModal('${f.id}')">
         <div class="find-card-body">
           <div class="find-card-title">${escHTML(f.name || 'Unknown')}</div>
           <div class="find-card-subtitle">${escHTML(f.producer || '')}</div>
           <div class="find-card-details">
             <span class="wine-detail-chip">${escHTML(f.type || 'Wine')}</span>
             ${f.vintage ? `<span class="wine-detail-chip">${f.vintage}</span>` : ''}
+            ${f.rating ? `<span class="wine-detail-chip find-rating-chip">★ ${f.rating}/5</span>` : ''}
           </div>
           <div class="find-card-footer">
             ${f.locationName ? `<span class="find-location"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escHTML(f.locationName)}</span>` : ''}
@@ -2208,7 +2253,7 @@ async function processFindImage(dataUrl) {
     showToast(`Added "${find.name}" to finds`);
   } catch (err) {
     console.error('Find scan error:', err);
-    showToast('Failed to analyze image — try again');
+    showToast('Find scan error: ' + (err.message || 'try again'));
   } finally {
     document.getElementById('findProcessing').style.display = 'none';
   }

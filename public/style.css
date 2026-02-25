@@ -386,6 +386,107 @@ input, select, textarea, button {
   height: 180px;
 }
 
+/* Mobile-native charts (HTML/CSS, no Chart.js) */
+.m-chart-mobile {
+  display: none;
+}
+
+/* Segmented bar (for type & category) */
+.m-seg-bar {
+  display: flex;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
+  gap: 2px;
+  margin-bottom: 0.75rem;
+}
+
+.m-seg-piece {
+  min-width: 8px;
+  transition: opacity 0.2s;
+}
+
+.m-seg-piece:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.m-seg-piece:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.m-seg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+}
+
+.m-seg-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.m-seg-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.m-seg-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.m-seg-count {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Horizontal bar list (for regions) */
+.m-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+
+.m-bar-label {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.m-bar-track {
+  flex: 1;
+  height: 18px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.m-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.4s ease;
+  min-width: 4px;
+}
+
+.m-bar-value {
+  width: 28px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
 .wine-value-tag {
   font-size: 0.75rem;
   font-weight: 600;
@@ -2019,6 +2120,10 @@ input, select, textarea, button {
   border-color: var(--accent);
 }
 
+.find-card-compact .find-card-body {
+  padding: 1rem;
+}
+
 .find-card-image {
   width: 100%;
   height: 160px;
@@ -2030,6 +2135,12 @@ input, select, textarea, button {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.find-rating-chip {
+  background: rgba(201,169,110,0.15) !important;
+  color: #B8860B !important;
+  font-weight: 600 !important;
 }
 
 .find-card-body {
@@ -2436,7 +2547,7 @@ body.no-auth .main-content { margin-left: 0; }
     grid-column: 1 / -1;
   }
 
-  /* Charts on mobile — legends move to bottom, JS sets dynamic heights */
+  /* Charts on mobile — pure HTML, no Chart.js canvas */
   .charts-row, .charts-row-3 {
     gap: 0.75rem;
     margin-bottom: 1.25rem;
@@ -2448,17 +2559,12 @@ body.no-auth .main-content { margin-left: 0; }
 
   .chart-card h3 {
     font-size: 0.85rem;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.5rem;
   }
 
-  .chart-wrap {
-    height: 320px;
-    min-height: 300px;
-  }
-
-  .chart-wrap-sm {
-    height: 300px;
-    min-height: 280px;
+  /* Hide canvas wraps on mobile — JS controls this */
+  .chart-wrap, .chart-wrap-sm {
+    /* JS sets display:none on mobile */
   }
 
   /* Section cards — tighter */
@@ -2518,7 +2624,6 @@ body.no-auth .main-content { margin-left: 0; }
   .finds-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .find-card-image { height: 130px; }
 }
 
 @media (max-width: 480px) {
@@ -2566,20 +2671,10 @@ body.no-auth .main-content { margin-left: 0; }
     display: block;
   }
 
-  /* Charts — JS sets dynamic heights, keep generous minimums */
+  /* Charts — pure HTML on mobile */
   .charts-row, .charts-row-3 {
     gap: 0.6rem;
     margin-bottom: 1rem;
-  }
-
-  .chart-wrap {
-    height: 300px;
-    min-height: 280px;
-  }
-
-  .chart-wrap-sm {
-    height: 280px;
-    min-height: 260px;
   }
 
   .chart-card {
@@ -2588,7 +2683,27 @@ body.no-auth .main-content { margin-left: 0; }
 
   .chart-card h3 {
     font-size: 0.8rem;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .m-seg-legend-item {
+    font-size: 0.72rem;
+  }
+  .m-seg-count {
+    font-size: 0.66rem;
+  }
+  .m-bar-label {
+    width: 75px;
+    font-size: 0.72rem;
+  }
+  .m-bar-value {
+    font-size: 0.72rem;
+  }
+  .m-bar-track {
+    height: 14px;
+  }
+  .m-seg-bar {
+    height: 22px;
   }
 
   /* Section cards */
@@ -2624,7 +2739,6 @@ body.no-auth .main-content { margin-left: 0; }
     grid-template-columns: 1fr;
     max-width: 400px;
   }
-  .find-card-image { height: 140px; }
 
   .modal-content {
     margin: 0.5rem;
