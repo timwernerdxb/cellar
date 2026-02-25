@@ -59,10 +59,17 @@ app.get('/share/:token/image/:bottleId', async (req, res) => {
     );
     if (userResult.rows.length === 0) return res.status(404).send('Not found');
     const userId = userResult.rows[0].id;
-    const bottleResult = await pool.query(
+    // Check bottles first, then finds
+    let bottleResult = await pool.query(
       "SELECT data->>'imageUrl' AS image_url FROM bottles WHERE id = $1 AND user_id = $2",
       [req.params.bottleId, userId]
     );
+    if (bottleResult.rows.length === 0 || !bottleResult.rows[0].image_url) {
+      bottleResult = await pool.query(
+        "SELECT data->>'imageUrl' AS image_url FROM finds WHERE id = $1 AND user_id = $2",
+        [req.params.bottleId, userId]
+      );
+    }
     if (bottleResult.rows.length === 0 || !bottleResult.rows[0].image_url) {
       return res.status(404).send('No image');
     }
@@ -95,21 +102,30 @@ app.get('/share/:token', async (req, res) => {
       return res.status(404).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Link Not Found</title><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#F8F6F3;color:#1A1A1E;text-align:center}h2{margin-bottom:0.5rem}p{color:#6B6560}</style></head><body><div><h2>Link not found</h2><p>This share link may have been revoked or is invalid.</p></div></body></html>`);
     }
     const user = userResult.rows[0];
+    const token = req.params.token;
     const bottlesResult = await pool.query(
       'SELECT id, data FROM bottles WHERE user_id = $1', [user.id]
     );
-    const token = req.params.token;
     const bottles = bottlesResult.rows.map(r => {
       const b = { id: r.id, ...r.data };
       if (!user.share_show_values) { delete b.marketValue; delete b.price; }
-      // Replace base64 images with a URL to the image endpoint
       if (b.imageUrl && b.imageUrl.startsWith('data:')) {
         b.imageUrl = `/share/${token}/image/${r.id}`;
       }
       delete b.consumptionHistory; delete b.editHistory;
       return b;
     });
-    const data = { bottles, owner: { name: user.name || 'Collector' }, showValues: user.share_show_values };
+    const findsResult = await pool.query(
+      'SELECT id, data FROM finds WHERE user_id = $1', [user.id]
+    );
+    const finds = findsResult.rows.map(r => {
+      const f = { id: r.id, ...r.data };
+      if (f.imageUrl && f.imageUrl.startsWith('data:')) {
+        f.imageUrl = `/share/${token}/image/${r.id}`;
+      }
+      return f;
+    });
+    const data = { bottles, finds, owner: { name: user.name || 'Collector' }, showValues: user.share_show_values };
     // Serve a fully standalone HTML page
     res.setHeader('Content-Type', 'text/html; charset=UTF-8');
     res.send(buildSharePage(data));
@@ -120,7 +136,7 @@ app.get('/share/:token', async (req, res) => {
 });
 
 function buildSharePage(data) {
-  const { bottles, owner, showValues } = data;
+  const { bottles, finds = [], owner, showValues } = data;
   const active = bottles.filter(b => b.status !== 'consumed');
   const total = active.reduce((s, b) => s + (b.quantity || 1), 0);
   const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -208,6 +224,46 @@ function buildSharePage(data) {
     imageUrl: b.imageUrl || '',
   }));
 
+  // Build finds cards
+  const sortedFinds = finds.sort((a,b) => (b.addedDate||'').localeCompare(a.addedDate||''));
+  const findCards = sortedFinds.map((f, idx) => {
+    const tc = typeColors[f.type] || '#999';
+    const score = f.communityScore ? `<span class="score">${Math.round(f.communityScore)}<small>/100</small></span>` : '';
+    const loc = f.locationName || f.locationCity || '';
+    return `<div class="card find-card-share" onclick="openFind(${idx})">
+      ${score}
+      <div class="card-top">
+        <div class="color-bar" style="background:${tc}"></div>
+        <div>
+          <div class="card-title">${esc(f.name||'Unknown')}</div>
+          <div class="card-sub">${esc(f.producer||'')} ${f.vintage?'· '+f.vintage:''}</div>
+        </div>
+      </div>
+      <div class="card-chips">
+        <span class="chip">${esc(f.type||'—')}</span>
+        ${f.region?`<span class="chip">${esc(f.region)}</span>`:''}
+      </div>
+      ${loc ? `<div class="find-loc"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${esc(loc)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const jsFinds = sortedFinds.map(f => ({
+    name: f.name || 'Unknown',
+    producer: f.producer || '',
+    type: f.type || '',
+    vintage: f.vintage || null,
+    region: f.region || '',
+    grape: f.grape || '',
+    communityScore: f.communityScore || null,
+    notes: f.notes || '',
+    locationName: f.locationName || '',
+    locationCity: f.locationCity || '',
+    locationCountry: f.locationCountry || '',
+    imageUrl: f.imageUrl || '',
+    abv: f.abv || null,
+    price: f.price || null,
+  }));
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -242,6 +298,13 @@ function buildSharePage(data) {
     .qty{position:absolute;top:3.4rem;right:0.5rem;background:#F0EDE8;border-radius:99px;padding:0.15rem 0.55rem;font-size:0.72rem;font-weight:600;color:#6B6560}
     .score{position:absolute;top:0.25rem;right:0.5rem;background:#C9A96E;color:#fff;font-size:0.68rem;font-weight:700;padding:0.15rem 0.45rem;border-radius:4px;z-index:3;line-height:1.2}
     .score small{font-weight:400;opacity:0.7;font-size:0.58rem}
+    .find-loc{font-size:0.78rem;color:#6B6560;margin-top:0.5rem;display:flex;align-items:center;gap:0.25rem}
+    .tabs{display:flex;gap:0;margin-bottom:1.25rem;border-bottom:2px solid #E8E4DE}
+    .tab{padding:0.6rem 1.25rem;font-size:0.9rem;font-weight:600;color:#9B9590;cursor:pointer;border:none;background:none;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all 0.15s}
+    .tab:hover{color:#1A1A1E}
+    .tab.active{color:#8B1A1A;border-bottom-color:#8B1A1A}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
     .empty{text-align:center;padding:3rem 1rem;color:#9B9590}
     .footer{text-align:center;margin-top:2rem;padding-top:1rem;border-top:1px solid #E8E4DE;font-size:0.78rem;color:#9B9590}
     .footer a{color:#8B1A1A;text-decoration:none;font-weight:500}
@@ -264,13 +327,23 @@ function buildSharePage(data) {
   </style>
 </head>
 <body>
-  <header style="margin-bottom:1.5rem">
+  <header style="margin-bottom:1rem">
     <h1>${esc(owner.name)}'s Collection</h1>
-    <p class="subtitle">${total} bottle${total!==1?'s':''} ${valueHtml}</p>
+    <p class="subtitle">${total} bottle${total!==1?'s':''}${finds.length ? ' · ' + finds.length + ' find' + (finds.length!==1?'s':'') : ''} ${valueHtml}</p>
   </header>
-  ${filterPills}
-  <div class="grid" id="grid">${cards}</div>
-  ${active.length===0?'<div class="empty"><h3>Empty collection</h3><p>No bottles in this collection yet.</p></div>':''}
+  ${finds.length > 0 ? `<div class="tabs">
+    <button class="tab active" onclick="switchTab('collection')">Collection (${total})</button>
+    <button class="tab" onclick="switchTab('finds')">Restaurant Finds (${finds.length})</button>
+  </div>` : ''}
+  <div class="tab-panel active" id="panel-collection">
+    ${filterPills}
+    <div class="grid" id="grid">${cards}</div>
+    ${active.length===0?'<div class="empty"><h3>Empty collection</h3><p>No bottles in this collection yet.</p></div>':''}
+  </div>
+  <div class="tab-panel" id="panel-finds">
+    <div class="grid">${findCards}</div>
+    ${finds.length===0?'<div class="empty"><h3>No finds yet</h3><p>No restaurant finds to show.</p></div>':''}
+  </div>
   <div class="footer">Shared via <a href="/">Cellar</a></div>
 
   <div class="modal-overlay" id="modal" onclick="closeModal(event)">
@@ -282,12 +355,45 @@ function buildSharePage(data) {
 
   <script>
     var bottles = ${JSON.stringify(jsBottles)};
+    var finds = ${JSON.stringify(jsFinds)};
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('panel-' + tab).classList.add('active');
+    }
     function filterCat(cat) {
       document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
       event.target.classList.add('active');
-      document.querySelectorAll('.card').forEach(c => {
+      document.querySelectorAll('#grid .card').forEach(c => {
         c.classList.toggle('hidden', cat && c.dataset.cat !== cat);
       });
+    }
+    function openFind(idx) {
+      var f = finds[idx];
+      if (!f) return;
+      var img = f.imageUrl ? '<img class="modal-img" src="' + f.imageUrl + '" onerror="this.style.display=\\'none\\'">' : '';
+      var scoreHtml = f.communityScore ? '<div class="modal-field"><label>Score</label><div class="val" style="color:#C9A96E;font-weight:700">' + Math.round(f.communityScore) + '/100</div></div>' : '';
+      var loc = f.locationName || '';
+      var city = [f.locationCity, f.locationCountry].filter(Boolean).join(', ');
+      var html = img +
+        '<div class="modal-body">' +
+        '<div class="modal-title">' + esc(f.name) + '</div>' +
+        '<div class="modal-subtitle">' + esc(f.producer) + (f.vintage ? ' \\u00b7 ' + f.vintage : '') + (f.region ? ' \\u00b7 ' + esc(f.region) : '') + '</div>' +
+        '<div class="modal-grid">' +
+        '<div class="modal-field"><label>Type</label><div class="val">' + esc(f.type || '\\u2014') + '</div></div>' +
+        (f.grape ? '<div class="modal-field"><label>Grape</label><div class="val">' + esc(f.grape) + '</div></div>' : '') +
+        (f.region ? '<div class="modal-field"><label>Region</label><div class="val">' + esc(f.region) + '</div></div>' : '') +
+        (f.abv ? '<div class="modal-field"><label>ABV</label><div class="val">' + f.abv + '%</div></div>' : '') +
+        (f.price ? '<div class="modal-field"><label>Price</label><div class="val">$' + Math.round(f.price) + '</div></div>' : '') +
+        scoreHtml +
+        (loc ? '<div class="modal-field"><label>Restaurant</label><div class="val">' + esc(loc) + '</div></div>' : '') +
+        (city ? '<div class="modal-field"><label>Location</label><div class="val">' + esc(city) + '</div></div>' : '') +
+        '</div>' +
+        (f.notes ? '<div class="modal-notes">' + esc(f.notes) + '</div>' : '') +
+        '</div>';
+      document.getElementById('modalContent').innerHTML = html;
+      document.getElementById('modal').classList.add('open');
     }
     function openCard(idx) {
       var b = bottles[idx];
