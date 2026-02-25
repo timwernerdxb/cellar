@@ -912,13 +912,9 @@ input, select, textarea, button {
   font-size: 0.58rem;
 }
 
-/* Location badge — below favorite star, top right area */
+/* Location badge — inline in footer next to est. value */
 .card-badge-location {
-  position: absolute;
-  bottom: auto;
-  top: 2rem;
-  right: 0.5rem;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.2rem;
   background: var(--bg-hover);
@@ -928,8 +924,9 @@ input, select, textarea, button {
   font-weight: 500;
   padding: 0.1rem 0.4rem;
   border-radius: 99px;
-  z-index: 2;
   white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 0.35rem;
 }
 .card-badge-location svg {
   flex-shrink: 0;

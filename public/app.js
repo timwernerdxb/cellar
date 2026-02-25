@@ -1310,7 +1310,6 @@ function renderCellar() {
       <div class="wine-card${isConsumed ? ' consumed' : ''}" onclick="openWineModal('${w.id}')">
         ${ratingBadge}
         <button class="favorite-star${w.isFavorite ? ' active' : ''}" onclick="toggleFavorite('${w.id}', event)" title="${w.isFavorite ? 'Remove from favorites' : 'Add to favorites'}">${w.isFavorite ? '&#9733;' : '&#9734;'}</button>
-        ${locBadge}
         ${isConsumed ? `<span class="wine-qty consumed-badge">Consumed</span>` : w.quantity > 1 ? `<span class="wine-qty">${w.quantity} bottles</span>` : ''}
         <div class="wine-card-top">
           <div class="wine-color-bar type-${typeClass}"></div>
@@ -1326,7 +1325,7 @@ function renderCellar() {
             : `<span class="wine-status status-${status.class}" style="font-size:0.72rem;padding:0.15rem 0.45rem">${status.label}</span>`}
         </div>
         <div class="wine-card-footer">
-          <span class="wine-price">${marketVal ? marketVal + ' <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400">est. value</span>' : ''}</span>
+          <span class="wine-price">${marketVal ? marketVal + ' <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400">est. value</span>' : ''}${locBadge ? ' ' + locBadge : ''}</span>
           ${ratingStars ? `<span class="wine-rating-sm">${ratingStars}</span>` : '<span style="font-size:0.8rem;color:var(--text-muted)">Not rated</span>'}
         </div>
       </div>`;
