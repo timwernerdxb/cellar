@@ -986,7 +986,7 @@ function getDrinkStatus(w) {
   return { class: 'ready', label: 'Ready' };
 }
 
-function isMobileView() { return window.innerWidth <= 768; }
+function isMobileView() { return window.innerWidth <= 1024; }
 
 // Re-render charts on orientation/resize change (debounced)
 let _resizeTimer;
@@ -1054,35 +1054,28 @@ function renderTypeChart() {
   let sorted = Object.entries(types).sort((a, b) => b[1] - a[1]);
   const total = sorted.reduce((s, e) => s + e[1], 0);
 
-  if (mobile) {
-    // Render pure HTML bars instead of Chart.js
-    const ctx = document.getElementById('typeChart');
-    const chartWrap = ctx.closest('.chart-wrap');
-    if (chartWrap) { chartWrap.style.display = 'none'; }
-    // Get or create mobile container
-    const card = ctx.closest('.chart-card');
-    let mobileEl = card.querySelector('.m-chart-mobile');
-    if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
-    mobileEl.style.display = 'block';
-    // Group small types into "Other" if > 8
-    if (sorted.length > 8) {
-      const top = sorted.slice(0, 7);
-      const rest = sorted.slice(7);
-      const otherTotal = rest.reduce((s, e) => s + e[1], 0);
-      if (otherTotal > 0) top.push(['Other', otherTotal]);
-      sorted = top;
-    }
-    renderMobileSegmentBar(sorted, total, TYPE_COLORS, mobileEl);
-    return;
+  const ctx = document.getElementById('typeChart');
+  const card = ctx.closest('.chart-card');
+  // Always create mobile container
+  let mobileEl = card.querySelector('.m-chart-mobile');
+  if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
+
+  // Always populate mobile chart (CSS controls visibility)
+  let mobileSorted = [...sorted];
+  if (mobileSorted.length > 8) {
+    const top = mobileSorted.slice(0, 7);
+    const rest = mobileSorted.slice(7);
+    const otherTotal = rest.reduce((s, e) => s + e[1], 0);
+    if (otherTotal > 0) top.push(['Other', otherTotal]);
+    mobileSorted = top;
   }
+  renderMobileSegmentBar(mobileSorted, total, TYPE_COLORS, mobileEl);
+
+  if (mobile) return; // CSS hides chart-wrap, shows m-chart-mobile
 
   // Desktop: use Chart.js
-  const ctx = document.getElementById('typeChart');
   const chartWrap = ctx.closest('.chart-wrap');
-  if (chartWrap) { chartWrap.style.display = ''; chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
-  const card = ctx.closest('.chart-card');
-  const mobileEl = card.querySelector('.m-chart-mobile');
-  if (mobileEl) mobileEl.style.display = 'none';
+  if (chartWrap) { chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
 
   if (typeChartInstance) typeChartInstance.destroy();
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1123,28 +1116,20 @@ function renderRegionChart() {
   const sorted = Object.entries(regions).sort((a, b) => b[1] - a[1]).slice(0, maxRegions);
   const total = sorted.reduce((s, e) => s + e[1], 0);
 
-  if (mobile) {
-    const ctx = document.getElementById('regionChart');
-    const chartWrap = ctx.closest('.chart-wrap');
-    if (chartWrap) { chartWrap.style.display = 'none'; }
-    const card = ctx.closest('.chart-card');
-    let mobileEl = card.querySelector('.m-chart-mobile');
-    if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
-    mobileEl.style.display = 'block';
-    // Create color map for regions
-    const regionColors = {};
-    sorted.forEach(([label], i) => { regionColors[label] = BAR_PALETTE[i % BAR_PALETTE.length]; });
-    renderMobileBarList(sorted, total, regionColors, mobileEl);
-    return;
-  }
+  const ctx = document.getElementById('regionChart');
+  const card = ctx.closest('.chart-card');
+  // Always create and populate mobile container
+  let mobileEl = card.querySelector('.m-chart-mobile');
+  if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
+  const regionColors = {};
+  sorted.forEach(([label], i) => { regionColors[label] = BAR_PALETTE[i % BAR_PALETTE.length]; });
+  renderMobileBarList(sorted, total, regionColors, mobileEl);
+
+  if (mobile) return; // CSS hides chart-wrap, shows m-chart-mobile
 
   // Desktop: Chart.js
-  const ctx = document.getElementById('regionChart');
   const chartWrap = ctx.closest('.chart-wrap');
-  if (chartWrap) { chartWrap.style.display = ''; chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
-  const card = ctx.closest('.chart-card');
-  const mobileEl = card.querySelector('.m-chart-mobile');
-  if (mobileEl) mobileEl.style.display = 'none';
+  if (chartWrap) { chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
 
   if (regionChartInstance) regionChartInstance.destroy();
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1190,27 +1175,19 @@ function renderCategoryChart() {
   const catEntries = catKeys.map(k => [k, cats[k]]);
   const total = catEntries.reduce((s, e) => s + e[1], 0);
 
-  if (mobile) {
-    const ctx = document.getElementById('categoryChart');
-    if (!ctx) return;
-    const chartWrap = ctx.closest('.chart-wrap');
-    if (chartWrap) { chartWrap.style.display = 'none'; }
-    const card = ctx.closest('.chart-card');
-    let mobileEl = card.querySelector('.m-chart-mobile');
-    if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
-    mobileEl.style.display = 'block';
-    renderMobileSegmentBar(catEntries, total, CAT_COLORS, mobileEl);
-    return;
-  }
-
-  // Desktop: Chart.js
   const ctx = document.getElementById('categoryChart');
   if (!ctx) return;
-  const chartWrap = ctx.closest('.chart-wrap');
-  if (chartWrap) { chartWrap.style.display = ''; chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
   const card = ctx.closest('.chart-card');
-  const mobileEl = card.querySelector('.m-chart-mobile');
-  if (mobileEl) mobileEl.style.display = 'none';
+  // Always create and populate mobile container
+  let mobileEl = card.querySelector('.m-chart-mobile');
+  if (!mobileEl) { mobileEl = document.createElement('div'); mobileEl.className = 'm-chart-mobile'; card.appendChild(mobileEl); }
+  renderMobileSegmentBar(catEntries, total, CAT_COLORS, mobileEl);
+
+  if (mobile) return; // CSS hides chart-wrap, shows m-chart-mobile
+
+  // Desktop: Chart.js
+  const chartWrap = ctx.closest('.chart-wrap');
+  if (chartWrap) { chartWrap.style.removeProperty('height'); chartWrap.style.removeProperty('min-height'); }
 
   if (categoryChartInstance) categoryChartInstance.destroy();
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -2425,40 +2402,44 @@ async function processFindImage(dataUrl) {
 // ============ SHAREABLE CELLAR ============
 
 async function loadSharedCellar(token) {
-  // Hide sidebar and all nav for shared view
+  // Hide ALL app UI for shared view — show only the shared section
   document.body.classList.add('no-auth');
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-
-  // Hide sidebar completely for shared view
   const sidebar = document.querySelector('.sidebar');
   if (sidebar) sidebar.style.display = 'none';
   const navToggle = document.querySelector('.mobile-nav-toggle');
   if (navToggle) navToggle.style.display = 'none';
 
-  // Show shared view section
-  let sharedView = document.getElementById('view-shared');
+  // Hide all views
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+
+  // Use the static shared view section from HTML
+  const sharedView = document.getElementById('view-shared');
   if (!sharedView) {
-    sharedView = document.createElement('section');
-    sharedView.className = 'view';
-    sharedView.id = 'view-shared';
-    const main = document.querySelector('.main-content');
-    if (main) main.appendChild(sharedView);
-    else document.body.appendChild(sharedView);
+    document.body.innerHTML = '<div style="padding:4rem;text-align:center"><h3>Error</h3><p>Shared view container not found.</p></div>';
+    return;
   }
   sharedView.classList.add('active');
-  sharedView.innerHTML = `<div class="scan-processing" style="display:flex;padding:4rem"><div class="scan-spinner"></div><p>Loading shared collection...</p></div>`;
+  sharedView.style.display = 'block';
+  sharedView.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem;gap:1rem">
+    <div class="scan-spinner"></div>
+    <p style="color:var(--text-secondary)">Loading shared collection...</p>
+  </div>`;
 
   try {
-    const resp = await fetch(`/api/share/${token}`);
+    const resp = await fetch('/api/share/' + token);
     if (!resp.ok) {
-      sharedView.innerHTML = `<div class="empty-state" style="padding:4rem"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><h3>Link not found</h3><p>This share link may have been revoked or is invalid.</p></div>`;
+      sharedView.innerHTML = `<div style="padding:4rem;text-align:center">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto 1rem;display:block;color:var(--text-muted)"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <h3>Link not found</h3>
+        <p style="color:var(--text-muted)">This share link may have been revoked or is invalid.</p>
+      </div>`;
       return;
     }
     const data = await resp.json();
     renderSharedView(data, sharedView);
   } catch (err) {
     console.error('Share load error:', err);
-    sharedView.innerHTML = `<div class="empty-state" style="padding:4rem"><h3>Failed to load</h3><p>${escHTML(err.message || 'Could not load the shared collection. Try refreshing.')}</p></div>`;
+    sharedView.innerHTML = `<div style="padding:4rem;text-align:center"><h3>Failed to load</h3><p style="color:var(--text-muted)">Error: ${escHTML(err.message || 'Unknown error')}. Try refreshing.</p></div>`;
   }
 }
 

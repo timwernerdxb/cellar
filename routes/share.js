@@ -92,6 +92,13 @@ router.get('/:token', async (req, res) => {
         delete bottle.marketValue;
         delete bottle.price;
       }
+      // Strip base64 image data to reduce payload (keep URL images)
+      if (bottle.imageUrl && bottle.imageUrl.startsWith('data:')) {
+        delete bottle.imageUrl;
+      }
+      // Strip other heavy fields not needed for shared view
+      delete bottle.consumptionHistory;
+      delete bottle.editHistory;
       return bottle;
     });
     res.json({
