@@ -2060,9 +2060,9 @@ function cropToBox(dataUrl, box) {
 // ============ BACKGROUND BLUR (portrait / bokeh effect) ============
 
 function applyBackgroundBlur(dataUrl, opts = {}) {
-  const blurPx = opts.blurStrength || 12;
-  const focusR = opts.focusRadius || 0.35;   // % of short edge for fully sharp zone
-  const fadeR  = opts.gradientWidth || 0.25;  // % of short edge for fade zone
+  const blurPx = opts.blurStrength || 22;
+  const focusR = opts.focusRadius || 0.25;   // % of short edge for fully sharp zone
+  const fadeR  = opts.gradientWidth || 0.20;  // % of short edge for fade zone
 
   return new Promise((resolve) => {
     const img = new Image();

@@ -211,14 +211,15 @@ app.post('/api/data-fix', async (req, res) => {
       fixes.push('Clase Azul Dia de Muertos Recuerdos: fresh image restored');
     }
 
-    // Fix 4: Reset crop flags on all bottles so they can be re-cropped with improved settings
+    // Fix 4: Reset crop AND blur flags so images can be reprocessed
     const resetResult = await pool.query(
-      `SELECT id, user_id, data FROM bottles WHERE data->>'imageCropped' = 'true'`
+      `SELECT id, user_id, data FROM bottles WHERE data->>'imageCropped' = 'true' OR data->>'imageBlurred' = 'true'`
     );
     let resetCount = 0;
     for (const row of resetResult.rows) {
       const data = row.data;
       data.imageCropped = false;
+      data.imageBlurred = false;
       await pool.query(
         'UPDATE bottles SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
         [JSON.stringify(data), row.id, row.user_id]
@@ -226,18 +227,19 @@ app.post('/api/data-fix', async (req, res) => {
       resetCount++;
     }
     const resetFindsResult = await pool.query(
-      `SELECT id, user_id, data FROM finds WHERE data->>'imageCropped' = 'true'`
+      `SELECT id, user_id, data FROM finds WHERE data->>'imageCropped' = 'true' OR data->>'imageBlurred' = 'true'`
     );
     for (const row of resetFindsResult.rows) {
       const data = row.data;
       data.imageCropped = false;
+      data.imageBlurred = false;
       await pool.query(
         'UPDATE finds SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
         [JSON.stringify(data), row.id, row.user_id]
       );
       resetCount++;
     }
-    if (resetCount > 0) fixes.push(`Reset crop flags on ${resetCount} items for re-crop`);
+    if (resetCount > 0) fixes.push(`Reset crop+blur flags on ${resetCount} items`);
 
     res.json({ ok: true, fixes });
   } catch (err) {
