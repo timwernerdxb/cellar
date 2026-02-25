@@ -195,7 +195,23 @@ app.post('/api/data-fix', async (req, res) => {
       fixes.push('Angelica Zapata: image + date (2024-12-10) + location (São Paulo, BR)');
     }
 
-    // Fix 3: Reset crop flags on all bottles so they can be re-cropped with improved settings
+    // Fix 3: Clase Azul Día de Muertos Recuerdos — replace over-cropped image with fresh one
+    const caResult = await pool.query(
+      `SELECT id, user_id, data FROM bottles WHERE data->>'name' ILIKE '%Clase Azul%Recuerdos%' OR data->>'name' ILIKE '%Clase Azul%Muertos%Recuerdos%'`
+    );
+    for (const row of caResult.rows) {
+      const data = row.data;
+      data.imageUrl = 'https://woodencork.com/cdn/shop/files/clase-azul-tequila-dia-de-los-muertos-limited-edition-recuerdos-2025-930.webp?v=1760488950';
+      data.imageBlurred = false;
+      data.imageCropped = false;
+      await pool.query(
+        'UPDATE bottles SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(data), row.id, row.user_id]
+      );
+      fixes.push('Clase Azul Dia de Muertos Recuerdos: fresh image restored');
+    }
+
+    // Fix 4: Reset crop flags on all bottles so they can be re-cropped with improved settings
     const resetResult = await pool.query(
       `SELECT id, user_id, data FROM bottles WHERE data->>'imageCropped' = 'true'`
     );
