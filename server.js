@@ -51,6 +51,39 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/images', require('./routes/images'));
 app.use('/api/share', require('./routes/share'));
 
+// Serve bottle image for share page (public, validated by share token)
+app.get('/share/:token/image/:bottleId', async (req, res) => {
+  try {
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE share_token = $1', [req.params.token]
+    );
+    if (userResult.rows.length === 0) return res.status(404).send('Not found');
+    const userId = userResult.rows[0].id;
+    const bottleResult = await pool.query(
+      "SELECT data->>'imageUrl' AS image_url FROM bottles WHERE id = $1 AND user_id = $2",
+      [req.params.bottleId, userId]
+    );
+    if (bottleResult.rows.length === 0 || !bottleResult.rows[0].image_url) {
+      return res.status(404).send('No image');
+    }
+    const imageUrl = bottleResult.rows[0].image_url;
+    if (imageUrl.startsWith('data:')) {
+      // Parse base64 data URI: data:image/jpeg;base64,/9j/4AAQ...
+      const match = imageUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (!match) return res.status(400).send('Invalid image');
+      res.setHeader('Content-Type', match[1]);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(match[2], 'base64'));
+    } else {
+      // External URL — redirect to it
+      res.redirect(imageUrl);
+    }
+  } catch (err) {
+    console.error('Share image error:', err);
+    res.status(500).send('Error');
+  }
+});
+
 // Share page — serve standalone HTML (NOT the SPA)
 app.get('/share/:token', async (req, res) => {
   try {
@@ -65,10 +98,14 @@ app.get('/share/:token', async (req, res) => {
     const bottlesResult = await pool.query(
       'SELECT id, data FROM bottles WHERE user_id = $1', [user.id]
     );
+    const token = req.params.token;
     const bottles = bottlesResult.rows.map(r => {
       const b = { id: r.id, ...r.data };
       if (!user.share_show_values) { delete b.marketValue; delete b.price; }
-      if (b.imageUrl && b.imageUrl.startsWith('data:')) delete b.imageUrl;
+      // Replace base64 images with a URL to the image endpoint
+      if (b.imageUrl && b.imageUrl.startsWith('data:')) {
+        b.imageUrl = `/share/${token}/image/${r.id}`;
+      }
       delete b.consumptionHistory; delete b.editHistory;
       return b;
     });
