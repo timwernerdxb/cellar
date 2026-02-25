@@ -7,7 +7,7 @@ router.use(authRequired);
 router.post('/upload', async (req, res) => {
   try {
     const pool = req.app.locals.pool;
-    const { bottles = [], tastings = [] } = req.body;
+    const { bottles = [], tastings = [], finds = [] } = req.body;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -32,8 +32,18 @@ router.post('/upload', async (req, res) => {
         );
       }
 
+      // Upsert all finds
+      for (const find of finds) {
+        const id = find.id || Date.now().toString();
+        await client.query(
+          `INSERT INTO finds (id, user_id, data) VALUES ($1, $2, $3)
+           ON CONFLICT (id, user_id) DO UPDATE SET data = $3, updated_at = NOW()`,
+          [id, req.userId, JSON.stringify(find)]
+        );
+      }
+
       await client.query('COMMIT');
-      res.json({ ok: true, bottles: bottles.length, tastings: tastings.length });
+      res.json({ ok: true, bottles: bottles.length, tastings: tastings.length, finds: finds.length });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -52,9 +62,11 @@ router.get('/download', async (req, res) => {
     const pool = req.app.locals.pool;
     const bottlesResult = await pool.query('SELECT id, data FROM bottles WHERE user_id = $1', [req.userId]);
     const tastingsResult = await pool.query('SELECT id, data FROM tastings WHERE user_id = $1', [req.userId]);
+    const findsResult = await pool.query('SELECT id, data FROM finds WHERE user_id = $1', [req.userId]);
     res.json({
       bottles: bottlesResult.rows.map(r => ({ id: r.id, ...r.data })),
       tastings: tastingsResult.rows.map(r => ({ id: r.id, ...r.data })),
+      finds: findsResult.rows.map(r => ({ id: r.id, ...r.data })),
     });
   } catch (err) {
     console.error('Sync download error:', err);

@@ -27,6 +27,18 @@ app.use(cookieParser());
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Auto-run migrations on startup
+const fs = require('fs');
+(async () => {
+  try {
+    const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8');
+    await pool.query(schema);
+    console.log('Database schema applied.');
+  } catch (err) {
+    console.error('Schema migration warning:', err.message);
+  }
+})();
+
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -37,6 +49,7 @@ app.use('/api/tastings', require('./routes/tastings'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/images', require('./routes/images'));
+app.use('/api/share', require('./routes/share'));
 
 // SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

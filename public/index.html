@@ -43,6 +43,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2h8l-1 9H9L8 2z"/><path d="M9 11h6v1a3 3 0 01-3 3v0a3 3 0 01-3-3v-1z"/><line x1="12" y1="15" x2="12" y2="20"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
         Tasting Notes
       </a>
+      <a href="#" class="nav-item" data-view="finds" onclick="switchView('finds')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        Restaurant Finds
+      </a>
       <a href="#" class="nav-item" data-view="timeline" onclick="switchView('timeline')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
         Drink Timeline
@@ -249,6 +253,9 @@
         <button class="status-filter-btn" data-status="all" onclick="setCellarStatusFilter('all', this)">All</button>
       </div>
       <div class="filter-bar">
+        <button class="filter-fav-btn" id="filterFavBtn" onclick="toggleFavoritesFilter()" title="Show favorites only">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+        </button>
         <div class="filter-dropdown" id="filterDropdown">
           <button class="filter-dropdown-btn" onclick="toggleFilterDropdown()">
             <span id="filterBtnText">All Types</span>
@@ -653,6 +660,57 @@
       <div class="timeline-container" id="timelineContainer"></div>
     </section>
 
+    <!-- ==================== RESTAURANT FINDS VIEW ==================== -->
+    <section class="view" id="view-finds">
+      <header class="view-header">
+        <div>
+          <h1>Restaurant Finds</h1>
+          <p class="subtitle" id="findsCount">0 finds</p>
+        </div>
+        <div class="header-actions">
+          <div class="search-bar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input type="text" placeholder="Search finds..." id="findsSearch" oninput="renderFinds()">
+          </div>
+        </div>
+      </header>
+
+      <div class="scan-section">
+        <div class="scan-options" style="grid-template-columns: 1fr 1fr">
+          <div class="scan-option" onclick="startFindScan()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </div>
+            <h4>Scan Label</h4>
+            <p>Take a photo at the restaurant</p>
+          </div>
+          <div class="scan-option" onclick="document.getElementById('findImageUpload').click()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <h4>Upload Image</h4>
+            <p>Select a photo of the label</p>
+          </div>
+        </div>
+        <input type="file" id="findImageUpload" accept="image/*" style="display:none" onchange="handleFindImageUpload(event)">
+        <div class="camera-preview" id="findCameraPreview" style="display:none">
+          <video id="findCameraVideo" autoplay playsinline muted></video>
+          <div class="camera-overlay"><div class="camera-frame"></div></div>
+          <div class="camera-controls">
+            <button class="btn btn-secondary" onclick="cancelFindScan()">Cancel</button>
+            <button class="btn btn-primary" onclick="captureFindPhoto()">Capture</button>
+          </div>
+        </div>
+        <div class="scan-processing" id="findProcessing" style="display:none">
+          <div class="scan-spinner"></div>
+          <p>Analyzing label &amp; capturing location...</p>
+        </div>
+        <canvas id="findCaptureCanvas" style="display:none"></canvas>
+      </div>
+
+      <div class="finds-grid" id="findsGrid"></div>
+    </section>
+
     <!-- ==================== SETTINGS VIEW ==================== -->
     <section class="view" id="view-settings">
       <header class="view-header">
@@ -690,6 +748,26 @@
             <input type="file" id="csvFileInput" accept=".csv,.txt" style="display:none" onchange="handleCSVUpload(event)">
           </div>
           <div class="csv-import-status" id="csvImportStatus" style="display:none"></div>
+        </div>
+
+        <div class="settings-card" id="shareSection">
+          <h3>Share Collection</h3>
+          <p class="settings-desc">Generate a public link so others can browse your collection (read-only, no login required).</p>
+          <div style="margin-top:1rem;display:flex;flex-direction:column;gap:0.75rem">
+            <input type="text" id="shareLinkInput" class="auth-input" readonly style="display:none;font-size:0.82rem;background:var(--bg);cursor:text" onclick="this.select()">
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-primary btn-sm" id="shareGenBtn" onclick="generateShareLink()">Generate Link</button>
+              <button class="btn btn-secondary btn-sm" id="shareCopyBtn" onclick="copyShareLink()" style="display:none">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;margin-right:3px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Copy Link
+              </button>
+              <button class="btn btn-danger btn-sm" id="shareRevokeBtn" onclick="revokeShareLink()" style="display:none">Revoke</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;color:var(--text-secondary);cursor:pointer">
+              <input type="checkbox" id="shareShowValues" onchange="toggleShareValues()" style="accent-color:var(--accent);width:16px;height:16px">
+              Show estimated values in shared view
+            </label>
+          </div>
         </div>
 
         <div class="settings-card">

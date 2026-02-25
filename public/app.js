@@ -6,6 +6,7 @@
 
 const STORAGE_KEY = 'vino_cellar';
 const TASTINGS_KEY = 'vino_tastings';
+const FINDS_KEY = 'vino_finds';
 const THEME_KEY = 'vino_theme';
 
 const WHISKEY_TYPES = ['Scotch', 'Bourbon', 'Irish', 'Japanese', 'Rye', 'Single Malt', 'Blended', 'Tennessee'];
@@ -29,6 +30,12 @@ let syncTimer = null;
 let authMode = 'login'; // 'login' or 'register'
 
 async function checkAuthState() {
+  // Check if this is a shared cellar URL
+  const sharePath = window.location.pathname.match(/^\/share\/([a-f0-9-]+)$/i);
+  if (sharePath) {
+    await loadSharedCellar(sharePath[1]);
+    return;
+  }
   try {
     const resp = await fetch('/api/auth/me', { credentials: 'include' });
     if (resp.ok) {
@@ -241,7 +248,7 @@ async function syncToServer() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ bottles: cellar, tastings }),
+      body: JSON.stringify({ bottles: cellar, tastings, finds: restaurantFinds }),
     });
     localStorage.setItem('vino_last_sync', new Date().toISOString());
   } catch (err) {
@@ -257,8 +264,10 @@ async function syncFromServer() {
     const data = await resp.json();
     cellar = data.bottles || [];
     tastings = data.tastings || [];
+    restaurantFinds = data.finds || [];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cellar));
     localStorage.setItem(TASTINGS_KEY, JSON.stringify(tastings));
+    localStorage.setItem(FINDS_KEY, JSON.stringify(restaurantFinds));
     localStorage.setItem('vino_last_sync', new Date().toISOString());
     // Run migrations on freshly downloaded data (fix values, currency, etc.)
     runMigrations();
@@ -310,6 +319,13 @@ function loadTastings() {
 }
 function saveTastings(t) {
   localStorage.setItem(TASTINGS_KEY, JSON.stringify(t));
+  debouncedServerSync();
+}
+function loadFinds() {
+  try { return JSON.parse(localStorage.getItem(FINDS_KEY)) || []; } catch { return []; }
+}
+function saveFinds(f) {
+  localStorage.setItem(FINDS_KEY, JSON.stringify(f));
   debouncedServerSync();
 }
 
@@ -655,7 +671,9 @@ const CELLARTRACKER_CSV = `"iWine","Type","Color","Category","Size","Currency","
 
 let cellar = loadCellar();
 let tastings = loadTastings();
+let restaurantFinds = loadFinds();
 let activeFilters = new Set();
+let showFavoritesOnly = false;
 let cellarStatusFilter = 'active'; // 'active' | 'consumed' | 'all'
 let selectedTastingWineId = null;
 let currentRating = 0;
@@ -683,6 +701,8 @@ function runMigrations() {
     }
     // Migrate currency to USD
     if (w.currency === 'EUR') { w.currency = 'USD'; dirty = true; }
+    // Set storage location to Dubai if not set
+    if (!w.location) { w.location = 'Dubai'; dirty = true; }
   });
   if (dirty && cellar.length > 0) saveCellar(cellar);
 }
@@ -754,7 +774,8 @@ function switchView(view) {
   if (view === 'cellar') renderCellar();
   if (view === 'tasting') { renderTastingWines(); renderPastTastings(); }
   if (view === 'timeline') renderTimeline();
-  if (view === 'settings') updateApiKeyStatus();
+  if (view === 'finds') renderFinds();
+  if (view === 'settings') { updateApiKeyStatus(); loadShareStatus(); }
   if (view !== 'add' && editingBottleId) { editingBottleId = null; updateAddViewTitle(false); }
   document.getElementById('sidebar').classList.remove('open');
 }
@@ -1104,6 +1125,7 @@ function renderCellar() {
   else if (cellarStatusFilter === 'consumed') wines = wines.filter(w => w.status === 'consumed');
 
   if (activeFilters.size > 0) wines = wines.filter(w => activeFilters.has(w.type));
+  if (showFavoritesOnly) wines = wines.filter(w => w.isFavorite);
   if (search) {
     wines = wines.filter(w =>
       (w.name || '').toLowerCase().includes(search) || (w.producer || '').toLowerCase().includes(search) ||
@@ -1151,8 +1173,16 @@ function renderCellar() {
 
     const isConsumed = w.status === 'consumed';
 
+    // Rating badge: show rating if available
+    const ratingBadge = w.rating ? `<span class="card-badge-rating">${w.rating}<span class="card-badge-rating-max">/5</span></span>` : '';
+    // Location badge
+    const locBadge = w.location ? `<span class="card-badge-location"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>${escHTML(w.location)}</span>` : '';
+
     return `
       <div class="wine-card${isConsumed ? ' consumed' : ''}" onclick="openWineModal('${w.id}')">
+        ${ratingBadge}
+        <button class="favorite-star${w.isFavorite ? ' active' : ''}" onclick="toggleFavorite('${w.id}', event)" title="${w.isFavorite ? 'Remove from favorites' : 'Add to favorites'}">${w.isFavorite ? '&#9733;' : '&#9734;'}</button>
+        ${locBadge}
         ${isConsumed ? `<span class="wine-qty consumed-badge">Consumed</span>` : w.quantity > 1 ? `<span class="wine-qty">${w.quantity} bottles</span>` : ''}
         <div class="wine-card-top">
           <div class="wine-color-bar type-${typeClass}"></div>
@@ -1225,6 +1255,30 @@ function setCellarStatusFilter(status, btn) {
   renderCellar();
 }
 function filterCellar() { renderCellar(); }
+
+function toggleFavorite(id, event) {
+  event.stopPropagation();
+  const w = cellar.find(b => b.id === id);
+  if (!w) return;
+  w.isFavorite = !w.isFavorite;
+  saveCellar(cellar);
+  renderCellar();
+}
+
+function toggleFavoriteFromModal(id) {
+  const w = cellar.find(b => b.id === id);
+  if (!w) return;
+  w.isFavorite = !w.isFavorite;
+  saveCellar(cellar);
+  renderCellar();
+  openWineModal(id);
+}
+
+function toggleFavoritesFilter() {
+  showFavoritesOnly = !showFavoritesOnly;
+  document.getElementById('filterFavBtn')?.classList.toggle('active', showFavoritesOnly);
+  renderCellar();
+}
 
 // ============ ADD BOTTLE ============
 
@@ -1521,7 +1575,7 @@ function openWineModal(id) {
   const body = document.getElementById('modalBody');
   body.innerHTML = `
     ${modalImgSrc ? `<img class="modal-bottle-image" src="${modalImgSrc}" alt="${escHTML(w.name)}" onerror="this.style.display='none'">` : ''}
-    <h2 class="modal-wine-title">${escHTML(w.name)}</h2>
+    <h2 class="modal-wine-title"><button class="modal-fav-star${w.isFavorite ? ' active' : ''}" onclick="toggleFavoriteFromModal('${w.id}')">${w.isFavorite ? '&#9733;' : '&#9734;'}</button>${escHTML(w.name)}</h2>
     <p class="modal-wine-subtitle">${escHTML(w.producer || '')} ${w.vintage ? '· ' + w.vintage : ''} · ${escHTML(w.region || '')}${w.age ? ' · ' + w.age + ' Year' : ''}${w.designation ? ' · ' + escHTML(w.designation) : ''}</p>
     <div class="modal-detail-grid">
       <div class="modal-detail-item"><label>Type</label><div class="value"><span class="wine-type-dot type-${w.type.replace(/\s/g, '')}" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px"></span>${w.type}</div></div>
@@ -1901,6 +1955,410 @@ function showToast(msg) {
   toast.textContent = msg;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ============ RESTAURANT FINDS ============
+
+function renderFinds() {
+  const search = (document.getElementById('findsSearch')?.value || '').toLowerCase();
+  let finds = [...restaurantFinds];
+  if (search) {
+    finds = finds.filter(f =>
+      (f.name || '').toLowerCase().includes(search) ||
+      (f.producer || '').toLowerCase().includes(search) ||
+      (f.region || '').toLowerCase().includes(search) ||
+      (f.locationName || '').toLowerCase().includes(search) ||
+      (f.type || '').toLowerCase().includes(search)
+    );
+  }
+  finds.sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || ''));
+  const countEl = document.getElementById('findsCount');
+  if (countEl) countEl.textContent = finds.length + ' find' + (finds.length !== 1 ? 's' : '');
+  const grid = document.getElementById('findsGrid');
+  if (!grid) return;
+
+  if (finds.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:3rem 1rem">
+      <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom:1rem;opacity:0.4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      <h3 style="margin-bottom:0.25rem">No finds yet</h3>
+      <p style="color:var(--text-muted);font-size:0.85rem">Scan a label at a restaurant to remember it</p>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = finds.map(f => {
+    const imgSrc = f.imageUrl ? (f.imageUrl.startsWith('data:') || f.imageUrl.startsWith('/') ? f.imageUrl : `/api/images/proxy?url=${encodeURIComponent(f.imageUrl)}`) : '';
+    return `
+      <div class="find-card" onclick="openFindModal('${f.id}')">
+        ${imgSrc ? `<div class="find-card-image"><img src="${imgSrc}" alt="${escHTML(f.name)}" onerror="this.parentElement.style.display='none'"></div>` : ''}
+        <div class="find-card-body">
+          <div class="find-card-title">${escHTML(f.name || 'Unknown')}</div>
+          <div class="find-card-subtitle">${escHTML(f.producer || '')}</div>
+          <div class="find-card-details">
+            <span class="wine-detail-chip">${escHTML(f.type || 'Wine')}</span>
+            ${f.vintage ? `<span class="wine-detail-chip">${f.vintage}</span>` : ''}
+          </div>
+          <div class="find-card-footer">
+            ${f.locationName ? `<span class="find-location"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escHTML(f.locationName)}</span>` : ''}
+            <span class="find-date">${formatDate(f.addedDate)}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openFindModal(id) {
+  const f = restaurantFinds.find(x => x.id === id);
+  if (!f) return;
+  const imgSrc = f.imageUrl ? (f.imageUrl.startsWith('data:') || f.imageUrl.startsWith('/') ? f.imageUrl : `/api/images/proxy?url=${encodeURIComponent(f.imageUrl)}`) : '';
+  let mapLink = '';
+  if (f.latitude && f.longitude) {
+    const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+    const mapUrl = isApple
+      ? `https://maps.apple.com/?ll=${f.latitude},${f.longitude}&q=${encodeURIComponent(f.locationName || 'Restaurant Find')}`
+      : `https://www.google.com/maps?q=${f.latitude},${f.longitude}`;
+    mapLink = `<a href="${mapUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="margin-top:0.5rem;display:inline-flex;align-items:center;gap:0.3rem">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> Open in Maps</a>`;
+  }
+  const body = document.getElementById('modalBody');
+  body.innerHTML = `
+    ${imgSrc ? `<img class="modal-bottle-image" src="${imgSrc}" alt="${escHTML(f.name)}" onerror="this.style.display='none'">` : ''}
+    <h2 class="modal-wine-title">${escHTML(f.name || 'Unknown')}</h2>
+    <p class="modal-wine-subtitle">${escHTML(f.producer || '')} ${f.vintage ? '· ' + f.vintage : ''} ${f.region ? '· ' + escHTML(f.region) : ''}</p>
+    <div class="modal-detail-grid">
+      <div class="modal-detail-item"><label>Type</label><div class="value">${escHTML(f.type || '—')}</div></div>
+      <div class="modal-detail-item"><label>Category</label><div class="value">${escHTML((f.category || '—').charAt(0).toUpperCase() + (f.category || '—').slice(1))}</div></div>
+      ${f.grape ? `<div class="modal-detail-item"><label>Grape / Varietal</label><div class="value">${escHTML(f.grape)}</div></div>` : ''}
+      ${f.region ? `<div class="modal-detail-item"><label>Region</label><div class="value">${escHTML(f.region)}</div></div>` : ''}
+      ${f.locationName ? `<div class="modal-detail-item"><label>Found At</label><div class="value">${escHTML(f.locationName)}${mapLink}</div></div>` : ''}
+      <div class="modal-detail-item"><label>Date Found</label><div class="value">${formatDate(f.addedDate)}</div></div>
+    </div>
+    ${f.notes ? `<div style="margin-top:1rem;padding:0.75rem;background:var(--bg-hover);border-radius:var(--radius-xs);font-size:0.85rem;line-height:1.5;color:var(--text-secondary)">${escHTML(f.notes)}</div>` : ''}
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" onclick="addFindToCellar('${f.id}')">Add to Collection</button>
+      <button class="btn btn-danger btn-sm" onclick="removeFind('${f.id}')">Remove</button>
+    </div>`;
+  document.getElementById('wineModal').classList.add('open');
+}
+
+function removeFind(id) {
+  if (!confirm('Remove this find?')) return;
+  restaurantFinds = restaurantFinds.filter(f => f.id !== id);
+  saveFinds(restaurantFinds);
+  closeWineModal();
+  renderFinds();
+  showToast('Find removed');
+}
+
+function addFindToCellar(id) {
+  const f = restaurantFinds.find(x => x.id === id);
+  if (!f) return;
+  closeWineModal();
+  switchView('add');
+  const cat = f.category || 'wine';
+  const validCats = ['wine', 'whiskey', 'tequila', 'sake', 'spirit'];
+  const effectiveCat = validCats.includes(cat) ? cat : 'wine';
+  const btn = document.querySelector(`[data-cat="${effectiveCat}"]`);
+  if (btn) setAddCategory(effectiveCat, btn);
+  if (f.name) document.getElementById('wineName').value = f.name;
+  if (f.producer) document.getElementById('wineProducer').value = f.producer;
+  if (f.vintage) document.getElementById('wineVintage').value = f.vintage;
+  if (f.type) document.getElementById('wineType').value = f.type;
+  if (f.grape) document.getElementById('wineGrape').value = f.grape;
+  if (f.region) document.getElementById('wineRegion').value = f.region;
+  if (f.notes) document.getElementById('wineNotes').value = f.notes;
+  if (f.imageUrl) {
+    const displayUrl = f.imageUrl.startsWith('data:') || f.imageUrl.startsWith('/') ? f.imageUrl : `/api/images/proxy?url=${encodeURIComponent(f.imageUrl)}`;
+    setBottleImagePreview(displayUrl, f.imageUrl);
+  }
+  showToast('Pre-filled from your find — adjust and save');
+}
+
+// ---- Find scan flow ----
+
+let findScanStream = null;
+
+async function startFindScan() {
+  try {
+    const preview = document.getElementById('findCameraPreview');
+    const video = document.getElementById('findCameraVideo');
+    preview.style.display = 'block';
+    const constraints = { video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } };
+    try {
+      findScanStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch {
+      findScanStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    }
+    video.srcObject = findScanStream;
+    await video.play();
+  } catch (err) {
+    showToast('Camera access denied');
+    cancelFindScan();
+  }
+}
+
+function cancelFindScan() {
+  if (findScanStream) { findScanStream.getTracks().forEach(t => t.stop()); findScanStream = null; }
+  const preview = document.getElementById('findCameraPreview');
+  if (preview) preview.style.display = 'none';
+  const proc = document.getElementById('findProcessing');
+  if (proc) proc.style.display = 'none';
+}
+
+async function captureFindPhoto() {
+  const video = document.getElementById('findCameraVideo');
+  const canvas = document.getElementById('findCaptureCanvas');
+  if (!video.srcObject || !video.videoWidth || video.readyState < 2) { showToast('Camera not ready'); return; }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  cancelFindScan();
+  await processFindImage(dataUrl);
+}
+
+function handleFindImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => await processFindImage(e.target.result);
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+async function processFindImage(dataUrl) {
+  document.getElementById('findProcessing').style.display = 'flex';
+  const apiKey = localStorage.getItem(API_KEY_STORAGE);
+  if (!apiKey) { document.getElementById('findProcessing').style.display = 'none'; showToast('Add your OpenAI API key in Settings first'); return; }
+
+  // Capture GPS
+  let gpsPosition = null;
+  try {
+    gpsPosition = await new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    });
+  } catch { /* GPS unavailable */ }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: `Analyze this bottle label. Extract info AND use your knowledge to fill gaps. Return ONLY valid JSON:
+{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","notes":"brief tasting profile (2-3 sentences)" or null}` },
+          { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }
+        ]}],
+        max_tokens: 500,
+        temperature: 0.1,
+      })
+    });
+    if (!response.ok) throw new Error('API error');
+    const result = await response.json();
+    const text = result.choices?.[0]?.message?.content || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON');
+    const data = JSON.parse(jsonMatch[0]);
+
+    // Reverse geocode
+    let locationName = '';
+    if (gpsPosition) {
+      try {
+        const geoResp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${gpsPosition.latitude}&lon=${gpsPosition.longitude}&format=json&zoom=18`);
+        if (geoResp.ok) {
+          const g = await geoResp.json();
+          locationName = g.address?.restaurant || g.address?.bar || g.address?.cafe || g.address?.pub ||
+            [g.address?.road, g.address?.city || g.address?.town].filter(Boolean).join(', ') || g.display_name?.split(',').slice(0, 2).join(',') || '';
+        }
+      } catch {}
+    }
+
+    const find = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
+      name: data.name || 'Unknown',
+      producer: data.producer || '',
+      type: data.type || 'Red',
+      category: data.category || 'wine',
+      grape: data.grape || '',
+      region: data.region || '',
+      vintage: data.vintage || null,
+      notes: data.notes || '',
+      imageUrl: dataUrl,
+      addedDate: new Date().toISOString().split('T')[0],
+      latitude: gpsPosition?.latitude || null,
+      longitude: gpsPosition?.longitude || null,
+      locationName,
+    };
+    restaurantFinds.push(find);
+    saveFinds(restaurantFinds);
+    renderFinds();
+    showToast(`Added "${find.name}" to finds`);
+  } catch (err) {
+    console.error('Find scan error:', err);
+    showToast('Failed to analyze image — try again');
+  } finally {
+    document.getElementById('findProcessing').style.display = 'none';
+  }
+}
+
+// ============ SHAREABLE CELLAR ============
+
+async function loadSharedCellar(token) {
+  document.body.classList.add('no-auth');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  // Show shared view section
+  let sharedView = document.getElementById('view-shared');
+  if (!sharedView) {
+    sharedView = document.createElement('section');
+    sharedView.className = 'view';
+    sharedView.id = 'view-shared';
+    document.querySelector('.main-content').appendChild(sharedView);
+  }
+  sharedView.classList.add('active');
+  sharedView.innerHTML = `<div class="scan-processing" style="display:flex;padding:4rem"><div class="scan-spinner"></div><p>Loading shared collection...</p></div>`;
+
+  try {
+    const resp = await fetch(`/api/share/${token}`);
+    if (!resp.ok) {
+      sharedView.innerHTML = `<div class="empty-state" style="padding:4rem"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><h3>Link not found</h3><p>This share link may have been revoked or is invalid.</p></div>`;
+      return;
+    }
+    const data = await resp.json();
+    renderSharedView(data, sharedView);
+  } catch (err) {
+    sharedView.innerHTML = `<div class="empty-state" style="padding:4rem"><h3>Failed to load</h3><p>Could not load the shared collection. Try refreshing.</p></div>`;
+  }
+}
+
+function renderSharedView(data, container) {
+  const { bottles, owner, showValues } = data;
+  const activeBottles = bottles.filter(b => b.status !== 'consumed');
+  const total = activeBottles.reduce((s, b) => s + (b.quantity || 1), 0);
+
+  // Group by type for stats
+  const typeCounts = {};
+  activeBottles.forEach(b => { typeCounts[b.type] = (typeCounts[b.type] || 0) + (b.quantity || 1); });
+  const typeChips = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).map(([t, c]) =>
+    `<span class="wine-detail-chip">${escHTML(t)} (${c})</span>`
+  ).join('');
+
+  let valueHtml = '';
+  if (showValues) {
+    const totalValue = activeBottles.reduce((s, b) => s + (b.marketValue || 0) * (b.quantity || 1), 0);
+    valueHtml = `<span style="color:var(--success);font-weight:600;margin-left:1rem">Est. Value: $${Math.round(totalValue).toLocaleString()}</span>`;
+  }
+
+  const cardsHtml = activeBottles.sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || '')).map(b => {
+    const typeClass = 'type-' + (b.type || '').replace(/\s/g, '');
+    const rating = b.rating ? '★'.repeat(b.rating) + '☆'.repeat(5 - b.rating) : '';
+    return `
+      <div class="wine-card" style="cursor:default">
+        <div class="wine-card-top">
+          <div class="wine-color-bar ${typeClass}"></div>
+          <div>
+            <div class="wine-card-title">${escHTML(b.name || 'Unknown')}</div>
+            <div class="wine-card-subtitle">${escHTML(b.producer || '')} ${b.vintage ? '· ' + b.vintage : ''}</div>
+          </div>
+        </div>
+        <div class="wine-card-details">
+          <span class="wine-detail-chip">${escHTML(b.type || '—')}</span>
+          ${b.region ? `<span class="wine-detail-chip">${escHTML(b.region)}</span>` : ''}
+          ${b.grape ? `<span class="wine-detail-chip">${escHTML(b.grape)}</span>` : ''}
+        </div>
+        <div class="wine-card-footer">
+          ${showValues && b.marketValue ? `<span class="wine-price">$${Math.round(b.marketValue).toLocaleString()}</span>` : '<span></span>'}
+          ${rating ? `<span class="wine-rating-sm">${rating}</span>` : ''}
+        </div>
+        ${(b.quantity || 1) > 1 ? `<span class="wine-qty">×${b.quantity}</span>` : ''}
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <header class="view-header">
+      <div>
+        <h1>${escHTML(owner.name)}'s Collection</h1>
+        <p class="subtitle">${total} bottle${total !== 1 ? 's' : ''} ${valueHtml}</p>
+      </div>
+    </header>
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:1.5rem">${typeChips}</div>
+    <div class="wine-grid">${cardsHtml}</div>
+    ${activeBottles.length === 0 ? `<div class="empty-state"><h3>Empty collection</h3><p>No bottles in this collection yet.</p></div>` : ''}`;
+}
+
+// Share management functions (for settings)
+async function loadShareStatus() {
+  try {
+    const resp = await fetch('/api/share/status', { credentials: 'include' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const section = document.getElementById('shareSection');
+    if (!section) return;
+    const linkInput = document.getElementById('shareLinkInput');
+    const genBtn = document.getElementById('shareGenBtn');
+    const copyBtn = document.getElementById('shareCopyBtn');
+    const revokeBtn = document.getElementById('shareRevokeBtn');
+    const toggleEl = document.getElementById('shareShowValues');
+    if (data.token) {
+      linkInput.value = window.location.origin + data.url;
+      linkInput.style.display = 'block';
+      genBtn.style.display = 'none';
+      copyBtn.style.display = 'inline-flex';
+      revokeBtn.style.display = 'inline-flex';
+      toggleEl.checked = data.showValues;
+    } else {
+      linkInput.style.display = 'none';
+      genBtn.style.display = 'inline-flex';
+      copyBtn.style.display = 'none';
+      revokeBtn.style.display = 'none';
+    }
+  } catch {}
+}
+
+async function generateShareLink() {
+  try {
+    const resp = await fetch('/api/share/generate', { method: 'POST', credentials: 'include' });
+    if (!resp.ok) throw new Error();
+    showToast('Share link created');
+    await loadShareStatus();
+  } catch { showToast('Failed to create share link'); }
+}
+
+function copyShareLink() {
+  const input = document.getElementById('shareLinkInput');
+  if (!input || !input.value) return;
+  navigator.clipboard.writeText(input.value).then(() => showToast('Link copied to clipboard')).catch(() => {
+    input.select();
+    document.execCommand('copy');
+    showToast('Link copied');
+  });
+}
+
+async function revokeShareLink() {
+  if (!confirm('Revoke share link? Anyone with the link will no longer be able to view your collection.')) return;
+  try {
+    const resp = await fetch('/api/share/revoke', { method: 'DELETE', credentials: 'include' });
+    if (!resp.ok) throw new Error();
+    showToast('Share link revoked');
+    await loadShareStatus();
+  } catch { showToast('Failed to revoke'); }
+}
+
+async function toggleShareValues() {
+  const checked = document.getElementById('shareShowValues')?.checked || false;
+  try {
+    await fetch('/api/share/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ showValues: checked }),
+    });
+    showToast(checked ? 'Values visible in shared view' : 'Values hidden from shared view');
+  } catch { showToast('Failed to update'); }
 }
 
 // ============ SETTINGS ============
