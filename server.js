@@ -195,6 +195,34 @@ app.post('/api/data-fix', async (req, res) => {
       fixes.push('Angelica Zapata: image + date (2024-12-10) + location (São Paulo, BR)');
     }
 
+    // Fix 3: Reset crop flags on all bottles so they can be re-cropped with improved settings
+    const resetResult = await pool.query(
+      `SELECT id, user_id, data FROM bottles WHERE data->>'imageCropped' = 'true'`
+    );
+    let resetCount = 0;
+    for (const row of resetResult.rows) {
+      const data = row.data;
+      data.imageCropped = false;
+      await pool.query(
+        'UPDATE bottles SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(data), row.id, row.user_id]
+      );
+      resetCount++;
+    }
+    const resetFindsResult = await pool.query(
+      `SELECT id, user_id, data FROM finds WHERE data->>'imageCropped' = 'true'`
+    );
+    for (const row of resetFindsResult.rows) {
+      const data = row.data;
+      data.imageCropped = false;
+      await pool.query(
+        'UPDATE finds SET data = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+        [JSON.stringify(data), row.id, row.user_id]
+      );
+      resetCount++;
+    }
+    if (resetCount > 0) fixes.push(`Reset crop flags on ${resetCount} items for re-crop`);
+
     res.json({ ok: true, fixes });
   } catch (err) {
     console.error('Data fix error:', err);

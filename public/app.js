@@ -2002,7 +2002,7 @@ function smartCropImage(dataUrl) {
           messages: [{
             role: 'user',
             content: [
-              { type: 'text', text: 'Look at this image. Find the main product (bottle, box, can, bag, or package) in the photo. Return ONLY a JSON object with the bounding box as percentages of the image dimensions: {"x": left%, "y": top%, "w": width%, "h": height%}. Values 0-100. If no product found return {"x":0,"y":0,"w":100,"h":100}.' },
+              { type: 'text', text: 'Look at this image. Find the main product (bottle, box, can, bag, or package) in the photo. Return a GENEROUS bounding box that includes the entire product with plenty of breathing room around it — do not crop tightly. Return ONLY a JSON object with the bounding box as percentages of the image dimensions: {"x": left%, "y": top%, "w": width%, "h": height%}. Values 0-100. If no product found return {"x":0,"y":0,"w":100,"h":100}.' },
               { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
             ]
           }],
@@ -2038,7 +2038,7 @@ function cropToBox(dataUrl, box) {
     const img = new Image();
     img.onload = () => {
       const w = img.width, h = img.height;
-      const pad = 0.05; // 5% padding
+      const pad = 0.15; // 15% padding — generous breathing room
       let sx = Math.max(0, (box.x / 100 - pad) * w);
       let sy = Math.max(0, (box.y / 100 - pad) * h);
       let sw = Math.min(w - sx, (box.w / 100 + pad * 2) * w);
