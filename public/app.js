@@ -951,9 +951,12 @@ function renderTypeChart() {
   // Dynamically size container based on legend items
   const chartWrap = ctx.closest('.chart-wrap');
   if (chartWrap && mobile) {
-    chartWrap.style.height = Math.max(260, 160 + sorted.length * 22) + 'px';
+    const h = Math.max(320, 200 + sorted.length * 28);
+    chartWrap.style.setProperty('height', h + 'px', 'important');
+    chartWrap.style.setProperty('min-height', h + 'px', 'important');
   } else if (chartWrap) {
-    chartWrap.style.height = '';
+    chartWrap.style.removeProperty('height');
+    chartWrap.style.removeProperty('min-height');
   }
 
   typeChartInstance = new Chart(ctx, {
@@ -1006,8 +1009,10 @@ function renderRegionChart() {
   // Dynamically set container height based on number of bars
   const chartWrap = ctx.closest('.chart-wrap');
   if (chartWrap) {
-    const barH = mobile ? 28 : 32;
-    chartWrap.style.height = Math.max(120, sorted.length * barH + 40) + 'px';
+    const barH = mobile ? 36 : 32;
+    const h = Math.max(160, sorted.length * barH + 60);
+    chartWrap.style.setProperty('height', h + 'px', 'important');
+    chartWrap.style.setProperty('min-height', h + 'px', 'important');
   }
 
   regionChartInstance = new Chart(ctx, {
@@ -1072,9 +1077,12 @@ function renderCategoryChart() {
   // Dynamically size container
   const chartWrap = ctx.closest('.chart-wrap');
   if (chartWrap && mobile) {
-    chartWrap.style.height = Math.max(240, 160 + catKeys.length * 22) + 'px';
+    const h = Math.max(300, 180 + catKeys.length * 28);
+    chartWrap.style.setProperty('height', h + 'px', 'important');
+    chartWrap.style.setProperty('min-height', h + 'px', 'important');
   } else if (chartWrap) {
-    chartWrap.style.height = '';
+    chartWrap.style.removeProperty('height');
+    chartWrap.style.removeProperty('min-height');
   }
 
   categoryChartInstance = new Chart(ctx, {

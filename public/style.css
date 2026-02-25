@@ -2452,13 +2452,13 @@ body.no-auth .main-content { margin-left: 0; }
   }
 
   .chart-wrap {
-    height: 280px;
-    min-height: 240px;
+    height: 320px;
+    min-height: 300px;
   }
 
   .chart-wrap-sm {
-    height: 260px;
-    min-height: 220px;
+    height: 300px;
+    min-height: 280px;
   }
 
   /* Section cards — tighter */
@@ -2573,13 +2573,13 @@ body.no-auth .main-content { margin-left: 0; }
   }
 
   .chart-wrap {
-    height: 260px;
-    min-height: 220px;
+    height: 300px;
+    min-height: 280px;
   }
 
   .chart-wrap-sm {
-    height: 240px;
-    min-height: 200px;
+    height: 280px;
+    min-height: 260px;
   }
 
   .chart-card {
