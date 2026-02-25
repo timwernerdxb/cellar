@@ -2209,16 +2209,16 @@ function renderFinds() {
 
   grid.innerHTML = finds.map(f => {
     const locLabel = getFindsLocationLabel(f);
-    const scoreBadge = f.communityScore ? `<span class="card-badge-rating">${Math.round(f.communityScore)}<span class="card-badge-rating-max">/100</span></span>` : '';
+    const scoreChip = f.communityScore ? `<span class="wine-detail-chip find-rating-chip">${Math.round(f.communityScore)}/100</span>` : '';
     return `
       <div class="find-card find-card-compact" onclick="openFindModal('${f.id}')">
-        ${scoreBadge}
         <div class="find-card-body">
           <div class="find-card-title">${escHTML(f.name || 'Unknown')}</div>
           <div class="find-card-subtitle">${escHTML(f.producer || '')}</div>
           <div class="find-card-details">
             <span class="wine-detail-chip">${escHTML(f.type || 'Wine')}</span>
             ${f.vintage ? `<span class="wine-detail-chip">${f.vintage}</span>` : ''}
+            ${scoreChip}
           </div>
           <div class="find-card-footer">
             ${locLabel ? `<span class="find-location"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${escHTML(locLabel)}</span>` : ''}
