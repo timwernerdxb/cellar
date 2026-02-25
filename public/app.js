@@ -1752,8 +1752,10 @@ function openWineModal(id) {
       ${w.status === 'consumed'
         ? `<button class="btn btn-secondary btn-sm" onclick="restockBottle('${w.id}')">Restock</button>`
         : `<button class="btn btn-secondary btn-sm" onclick="drinkBottle('${w.id}')">Open a Bottle</button>`}
+      <button class="btn btn-secondary btn-sm btn-similar" onclick="findSimilar('${w.id}','bottle')">${getSimilarLabel(w.type)}</button>
       <button class="btn btn-danger btn-sm" onclick="removeWine('${w.id}')">Remove</button>
-    </div>`;
+    </div>
+    <div id="similarResults-${w.id}"></div>`;
 
   document.getElementById('wineModal').classList.add('open');
 }
@@ -2293,8 +2295,10 @@ function openFindModal(id) {
     ${f.notes ? `<div style="margin-top:1rem;padding:0.75rem;background:var(--bg-hover);border-radius:var(--radius-xs);font-size:0.85rem;line-height:1.5;color:var(--text-secondary)">${escHTML(f.notes)}</div>` : ''}
     <div class="modal-actions">
       <button class="btn btn-primary btn-sm" onclick="addFindToCellar('${f.id}')">Add to Collection</button>
+      <button class="btn btn-secondary btn-sm btn-similar" onclick="findSimilar('${f.id}','find')">${getSimilarLabel(f.type)}</button>
       <button class="btn btn-danger btn-sm" onclick="removeFind('${f.id}')">Remove</button>
-    </div>`;
+    </div>
+    <div id="similarResults-${f.id}"></div>`;
   document.getElementById('wineModal').classList.add('open');
 }
 
@@ -2756,6 +2760,114 @@ async function fixEncoding() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Fix Character Encoding';
+  }
+}
+
+// ============ FIND SIMILAR (AI) ============
+
+function getSimilarLabel(type) {
+  if (!type) return 'Find Similar';
+  if (WHISKEY_TYPES.includes(type)) return 'Similar Whiskeys';
+  if (TEQUILA_TYPES.includes(type)) return 'Similar Tequilas';
+  if (SAKE_TYPES.includes(type)) return 'Similar Sake';
+  if (SPIRIT_TYPES.includes(type)) return 'Similar Spirits';
+  if (WINE_TYPES.includes(type)) return 'Similar Wines';
+  return 'Find Similar';
+}
+
+function getCategoryLabel(type) {
+  if (!type) return 'bottles';
+  if (WHISKEY_TYPES.includes(type)) return 'whiskeys';
+  if (TEQUILA_TYPES.includes(type)) return 'tequilas';
+  if (SAKE_TYPES.includes(type)) return 'sake';
+  if (SPIRIT_TYPES.includes(type)) return 'spirits';
+  return 'wines';
+}
+
+async function findSimilar(id, source) {
+  const item = source === 'find'
+    ? restaurantFinds.find(x => x.id === id)
+    : cellar.find(b => b.id === id);
+  if (!item) return;
+
+  const apiKey = localStorage.getItem(API_KEY_STORAGE);
+  if (!apiKey) {
+    showToast('Add your OpenAI API key in Settings first');
+    return;
+  }
+
+  const container = document.getElementById('similarResults-' + id);
+  if (!container) return;
+
+  // Toggle off if already showing results
+  if (container.innerHTML && !container.querySelector('.similar-loading')) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const catLabel = getCategoryLabel(item.type);
+  container.innerHTML = `<div class="similar-loading"><div class="scan-spinner"></div><p>Finding similar ${catLabel}…</p></div>`;
+
+  const details = [
+    item.name,
+    item.producer ? `by ${item.producer}` : '',
+    item.region || '',
+    item.grape ? `(${item.grape})` : '',
+    item.vintage ? `${item.vintage}` : '',
+    item.type || '',
+    item.communityScore ? `score ${item.communityScore}/100` : '',
+    item.price ? `~$${Math.round(item.price)}` : '',
+    item.abv ? `${item.abv}% ABV` : '',
+    item.age ? `${item.age} year` : '',
+  ].filter(Boolean).join(', ');
+
+  const prompt = `Given this ${item.type || 'bottle'}: ${details} — suggest 5 similar ${catLabel} that someone who enjoys this would also like. For each, give: name, producer, region, approximate price (USD), and a brief one-sentence reason why it's similar. Return ONLY a JSON array with objects having keys: name, producer, region, price, reason. No markdown, no explanation.`;
+
+  try {
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'API request failed');
+    }
+
+    const data = await resp.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    // Parse JSON from response (handle markdown code blocks)
+    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    const suggestions = JSON.parse(jsonStr);
+
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      container.innerHTML = '<p class="similar-empty">No suggestions found.</p>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="similar-suggestions">
+        <h4 class="similar-heading">${getSimilarLabel(item.type)}</h4>
+        ${suggestions.map(s => `
+          <div class="similar-item">
+            <div class="similar-item-header">
+              <span class="similar-item-name">${escHTML(s.name)}</span>
+              ${s.price ? `<span class="similar-item-price">~$${typeof s.price === 'number' ? Math.round(s.price) : s.price}</span>` : ''}
+            </div>
+            <div class="similar-item-meta">${escHTML(s.producer || '')}${s.region ? ' · ' + escHTML(s.region) : ''}</div>
+            <div class="similar-item-reason">${escHTML(s.reason || '')}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  } catch (err) {
+    console.error('Find similar error:', err);
+    container.innerHTML = `<p class="similar-error">Could not find suggestions: ${escHTML(err.message)}</p>`;
   }
 }
 

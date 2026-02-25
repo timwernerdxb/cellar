@@ -91,6 +91,117 @@ app.get('/share/:token/image/:bottleId', async (req, res) => {
   }
 });
 
+// Find Similar — server-side endpoint for share page visitors
+const similarRateLimit = {}; // { token: { count, resetAt } }
+app.post('/share/:token/similar', async (req, res) => {
+  try {
+    const token = req.params.token;
+    // Rate limit: 10 calls per token per hour
+    const now = Date.now();
+    if (!similarRateLimit[token] || similarRateLimit[token].resetAt < now) {
+      similarRateLimit[token] = { count: 0, resetAt: now + 3600000 };
+    }
+    if (similarRateLimit[token].count >= 10) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
+    }
+    similarRateLimit[token].count++;
+
+    const userResult = await pool.query(
+      'SELECT id, openai_key FROM users WHERE share_token = $1', [token]
+    );
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const user = userResult.rows[0];
+    const apiKey = user.openai_key;
+    if (!apiKey) return res.status(400).json({ error: 'AI suggestions not available for this collection.' });
+
+    const { bottleIdx, type } = req.body; // type: 'bottle' | 'find'
+    if (bottleIdx === undefined) return res.status(400).json({ error: 'Missing bottleIdx' });
+
+    let items;
+    if (type === 'find') {
+      const result = await pool.query('SELECT data FROM finds WHERE user_id = $1', [user.id]);
+      items = result.rows.map(r => r.data).sort((a,b) => (b.addedDate||'').localeCompare(a.addedDate||''));
+    } else {
+      const result = await pool.query('SELECT data FROM bottles WHERE user_id = $1', [user.id]);
+      items = result.rows.map(r => r.data).filter(b => b.status !== 'consumed').sort((a,b) => (b.addedDate||'').localeCompare(a.addedDate||''));
+    }
+
+    const item = items[bottleIdx];
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    // Build category label
+    const whiskyTypes = ['Scotch','Bourbon','Irish','Japanese','Rye','Single Malt','Blended','Tennessee'];
+    const tequilaTypes = ['Tequila','Mezcal'];
+    const sakeTypes = ['Junmai','Ginjo','Daiginjo','Nigori','Sparkling Sake','Sake'];
+    const spiritTypes = ['Rum','Cognac','Brandy','Gin','Vodka','Other Spirit'];
+    let catLabel = 'wines';
+    if (whiskyTypes.includes(item.type)) catLabel = 'whiskeys';
+    else if (tequilaTypes.includes(item.type)) catLabel = 'tequilas';
+    else if (sakeTypes.includes(item.type)) catLabel = 'sake';
+    else if (spiritTypes.includes(item.type)) catLabel = 'spirits';
+
+    const details = [
+      item.name,
+      item.producer ? `by ${item.producer}` : '',
+      item.region || '',
+      item.grape ? `(${item.grape})` : '',
+      item.vintage ? `${item.vintage}` : '',
+      item.type || '',
+      item.communityScore ? `score ${item.communityScore}/100` : '',
+      item.price ? `~$${Math.round(item.price)}` : '',
+      item.abv ? `${item.abv}% ABV` : '',
+      item.age ? `${item.age} year` : '',
+    ].filter(Boolean).join(', ');
+
+    const prompt = `Given this ${item.type || 'bottle'}: ${details} — suggest 5 similar ${catLabel} that someone who enjoys this would also like. For each, give: name, producer, region, approximate price (USD), and a brief one-sentence reason why it's similar. Return ONLY a JSON array with objects having keys: name, producer, region, price, reason. No markdown, no explanation.`;
+
+    const https = require('https');
+    const openaiResp = await new Promise((resolve, reject) => {
+      const postData = JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 1000,
+      });
+      const req = https.request({
+        hostname: 'api.openai.com',
+        path: '/v1/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Length': Buffer.byteLength(postData),
+        },
+        timeout: 30000,
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); }
+          catch { reject(new Error('Invalid response')); }
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+      req.write(postData);
+      req.end();
+    });
+
+    if (openaiResp.error) {
+      return res.status(500).json({ error: openaiResp.error.message || 'AI error' });
+    }
+
+    const content = openaiResp.choices?.[0]?.message?.content || '';
+    const jsonStr = content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    const suggestions = JSON.parse(jsonStr);
+
+    res.json({ suggestions });
+  } catch (err) {
+    console.error('Find similar error:', err);
+    res.status(500).json({ error: 'Failed to find suggestions' });
+  }
+});
+
 // Share page — serve standalone HTML (NOT the SPA)
 app.get('/share/:token', async (req, res) => {
   try {
@@ -314,7 +425,7 @@ function buildSharePage(data) {
     .modal-box{background:#fff;border-radius:16px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
     .modal-close{position:absolute;top:0.75rem;right:0.75rem;background:rgba(0,0,0,0.05);border:none;font-size:1.5rem;cursor:pointer;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#6B6560;z-index:5}
     .modal-close:hover{background:rgba(0,0,0,0.1)}
-    .modal-img{width:100%;height:240px;object-fit:cover;border-radius:16px 16px 0 0}
+    .modal-img{width:100%;max-height:300px;object-fit:contain;border-radius:16px 16px 0 0;background:#F8F6F3}
     .modal-body{padding:1.5rem}
     .modal-title{font-family:'Playfair Display',serif;font-size:1.35rem;font-weight:600;margin-bottom:0.25rem}
     .modal-subtitle{font-size:0.88rem;color:#6B6560;margin-bottom:1rem}
@@ -323,6 +434,10 @@ function buildSharePage(data) {
     .modal-field .val{font-size:0.9rem;font-weight:500}
     .modal-stars{color:#C9A96E;font-size:1rem}
     .modal-notes{background:#F8F6F3;border-radius:8px;padding:0.75rem;font-size:0.85rem;line-height:1.5;color:#6B6560;margin-top:0.75rem}
+    .btn-similar-share{font-family:inherit;font-size:0.82rem;font-weight:500;padding:0.4rem 1rem;border-radius:8px;border:1px solid rgba(201,169,110,0.3);background:rgba(201,169,110,0.12);color:#A07D3A;cursor:pointer;transition:all 0.15s}
+    .btn-similar-share:hover{background:rgba(201,169,110,0.22)}
+    .sim-spin{width:28px;height:28px;border:3px solid #E8E4DE;border-top:3px solid #C9A96E;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto}
+    @keyframes spin{to{transform:rotate(360deg)}}
     @media(max-width:480px){.modal-grid{grid-template-columns:1fr}.modal-box{margin:0.5rem}}
   </style>
 </head>
@@ -391,6 +506,8 @@ function buildSharePage(data) {
         (city ? '<div class="modal-field"><label>Location</label><div class="val">' + esc(city) + '</div></div>' : '') +
         '</div>' +
         (f.notes ? '<div class="modal-notes">' + esc(f.notes) + '</div>' : '') +
+        '<div style="margin-top:1rem;text-align:center"><button class="btn-similar-share" onclick="findSimilarShare(' + idx + ',\\'find\\')">' + getSimilarLbl(f.type) + '</button></div>' +
+        '<div id="shareSimilar"></div>' +
         '</div>';
       document.getElementById('modalContent').innerHTML = html;
       document.getElementById('modal').classList.add('open');
@@ -419,9 +536,50 @@ function buildSharePage(data) {
         scoreHtml + priceHtml +
         '</div>' +
         (b.notes ? '<div class="modal-notes">' + esc(b.notes) + '</div>' : '') +
+        '<div style="margin-top:1rem;text-align:center"><button class="btn-similar-share" onclick="findSimilarShare(' + idx + ',\\'bottle\\')">' + getSimilarLbl(b.type) + '</button></div>' +
+        '<div id="shareSimilar"></div>' +
         '</div>';
       document.getElementById('modalContent').innerHTML = html;
       document.getElementById('modal').classList.add('open');
+    }
+    function getSimilarLbl(type) {
+      var w = ['Scotch','Bourbon','Irish','Japanese','Rye','Single Malt','Blended','Tennessee'];
+      var t = ['Tequila','Mezcal'];
+      var sk = ['Junmai','Ginjo','Daiginjo','Nigori','Sparkling Sake','Sake'];
+      var sp = ['Rum','Cognac','Brandy','Gin','Vodka','Other Spirit'];
+      if (w.indexOf(type) >= 0) return 'Similar Whiskeys';
+      if (t.indexOf(type) >= 0) return 'Similar Tequilas';
+      if (sk.indexOf(type) >= 0) return 'Similar Sake';
+      if (sp.indexOf(type) >= 0) return 'Similar Spirits';
+      return 'Similar Wines';
+    }
+    function findSimilarShare(idx, type) {
+      var el = document.getElementById('shareSimilar');
+      if (!el) return;
+      if (el.innerHTML && !el.querySelector('.sim-spin')) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div style="text-align:center;padding:1.5rem"><div class="sim-spin"></div><p style="color:#9B9590;font-size:0.85rem;margin-top:0.75rem">Finding suggestions…</p></div>';
+      fetch(window.location.pathname + '/similar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bottleIdx: idx, type: type })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.error) { el.innerHTML = '<p style="color:#9B9590;text-align:center;padding:0.75rem;font-size:0.85rem">' + esc(data.error) + '</p>'; return; }
+        var s = data.suggestions || [];
+        if (!s.length) { el.innerHTML = '<p style="color:#9B9590;text-align:center;padding:0.75rem;font-size:0.85rem">No suggestions found.</p>'; return; }
+        var html = '<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #E8E4DE"><h4 style="font-family:\\'DM Sans\\',sans-serif;font-weight:600;font-size:0.95rem;margin-bottom:0.75rem">Suggestions</h4>';
+        s.forEach(function(item) {
+          html += '<div style="padding:0.75rem;margin-bottom:0.5rem;background:#F8F6F3;border-radius:8px;border:1px solid #E8E4DE">' +
+            '<div style="display:flex;justify-content:space-between;gap:0.5rem"><span style="font-weight:600;font-size:0.9rem">' + esc(item.name) + '</span>' +
+            (item.price ? '<span style="font-weight:600;font-size:0.82rem;color:#2D7A4F;white-space:nowrap">~$' + (typeof item.price === 'number' ? Math.round(item.price) : item.price) + '</span>' : '') +
+            '</div>' +
+            '<div style="font-size:0.8rem;color:#6B6560;margin-top:0.15rem">' + esc(item.producer || '') + (item.region ? ' \\u00b7 ' + esc(item.region) : '') + '</div>' +
+            '<div style="font-size:0.8rem;color:#9B9590;margin-top:0.35rem;font-style:italic;line-height:1.4">' + esc(item.reason || '') + '</div></div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+      }).catch(function(err) {
+        el.innerHTML = '<p style="color:#C0392B;text-align:center;padding:0.75rem;font-size:0.85rem">Could not load suggestions.</p>';
+      });
     }
     function closeModal(e) { if (e.target === document.getElementById('modal')) document.getElementById('modal').classList.remove('open'); }
     function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
