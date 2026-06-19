@@ -875,6 +875,7 @@ function switchView(view) {
   if (view === 'finds') renderFinds();
   if (view === 'settings') { updateApiKeyStatus(); loadShareStatus(); }
   if (view !== 'add' && editingBottleId) { editingBottleId = null; updateAddViewTitle(false); }
+  if (view !== 'scanner') cancelScannerScan();
   document.getElementById('sidebar').classList.remove('open');
 }
 
@@ -2501,6 +2502,257 @@ async function processFindImage(dataUrl) {
   } finally {
     document.getElementById('findProcessing').style.display = 'none';
   }
+}
+
+// ============ BOTTLE SCANNER ============
+// Standalone scanner: analyze any bottle to surface its rating + tasting notes,
+// then convert the result into a collection bottle or a restaurant find.
+
+let scannerStream = null;
+let lastScanResult = null; // { data, imageUrl, latitude, longitude, locationName, locationCity, locationCountry }
+
+async function startScannerScan() {
+  try {
+    const preview = document.getElementById('scannerCameraPreview');
+    const video = document.getElementById('scannerCameraVideo');
+    preview.style.display = 'block';
+    try {
+      scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    } catch {
+      scannerStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    }
+    video.srcObject = scannerStream;
+    await video.play();
+    setTimeout(() => preview.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+  } catch (err) {
+    showToast('Camera access denied');
+    cancelScannerScan();
+  }
+}
+
+function cancelScannerScan() {
+  if (scannerStream) { scannerStream.getTracks().forEach(t => t.stop()); scannerStream = null; }
+  const preview = document.getElementById('scannerCameraPreview');
+  if (preview) preview.style.display = 'none';
+}
+
+async function captureScannerPhoto() {
+  const video = document.getElementById('scannerCameraVideo');
+  const canvas = document.getElementById('scannerCaptureCanvas');
+  if (!video.srcObject || !video.videoWidth || video.readyState < 2) { showToast('Camera not ready'); return; }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const rawUrl = canvas.toDataURL('image/jpeg', 0.85);
+  cancelScannerScan();
+  const resized = await resizeImageForVision(rawUrl, 1024);
+  await processScannerImage(resized);
+}
+
+function handleScannerImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const resized = await resizeImageForVision(e.target.result, 1024);
+    await processScannerImage(resized);
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+async function processScannerImage(dataUrl) {
+  document.getElementById('scannerProcessing').style.display = 'flex';
+  document.getElementById('scannerResult').innerHTML = '';
+  const apiKey = localStorage.getItem(API_KEY_STORAGE);
+  if (!apiKey) { document.getElementById('scannerProcessing').style.display = 'none'; showToast('Add your OpenAI API key in Settings first.'); return; }
+  if (!checkDemoRateLimit()) { document.getElementById('scannerProcessing').style.display = 'none'; return; }
+
+  // Capture GPS in the background — only used if the result is saved as a restaurant find.
+  let gpsPosition = null;
+  try {
+    gpsPosition = await new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    });
+  } catch { /* GPS unavailable */ }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: `Analyze this bottle label image. Extract all visible information AND use your knowledge of this specific product to fill in details not shown on the label. Return ONLY valid JSON:
+{
+  "name": "full product name",
+  "producer": "producer/brand/distillery/winery/brewery",
+  "vintage": year as number or null,
+  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Vodka","Other Spirit",
+  "category": "wine" or "whiskey" or "tequila" or "sake" or "spirit",
+  "grape": "grape varietal, or rice type for sake, or grain/base ingredient for spirits" or null,
+  "region": "region, country",
+  "age": age statement as number or null,
+  "abv": ABV percentage as number or null,
+  "designation": "special designation/edition" or null,
+  "size": "bottle size" or "750ml",
+  "price": estimated retail price in USD as number or null,
+  "criticScore": estimated critic/community score out of 100 (based on known reviews and reputation — e.g. Wine Spectator, CellarTracker, Vivino, Wine-Searcher) as number or null,
+  "drinkFrom": earliest recommended drinking year or null,
+  "drinkUntil": latest recommended drinking year or null,
+  "notes": "tasting profile / flavour notes (2-3 sentences from your knowledge)" or null
+}
+Use your knowledge to estimate price, critic score, drinking window, grape/rice variety, tasting notes, and any other fields not visible on the label.` },
+          { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
+        ]}],
+        max_tokens: 700,
+        temperature: 0.1,
+      })
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error?.message || `API error ${response.status}`);
+    }
+    const result = await response.json();
+    const text = result.choices?.[0]?.message?.content || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON in response');
+    const data = JSON.parse(jsonMatch[0]);
+
+    // Fill in a drink window for wines if the model omitted one
+    if (data.category === 'wine' && data.vintage && !data.drinkFrom) {
+      data.drinkFrom = data.vintage + 2;
+      data.drinkUntil = data.vintage + (data.type === 'Red' ? 15 : data.type === 'White' ? 5 : 10);
+    }
+    if (data.category && data.category !== 'wine') {
+      data.drinkFrom = null;
+      data.drinkUntil = null;
+    }
+
+    // Reverse geocode — capture venue, city and country code (used only for finds)
+    let locationName = '', locationCity = '', locationCountry = '';
+    if (gpsPosition) {
+      try {
+        const geoResp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${gpsPosition.latitude}&lon=${gpsPosition.longitude}&format=json&zoom=18&accept-language=en`);
+        if (geoResp.ok) {
+          const g = await geoResp.json();
+          const venueName = g.address?.restaurant || g.address?.bar || g.address?.cafe || g.address?.pub || '';
+          locationCity = g.address?.city || g.address?.town || g.address?.state || g.address?.county || g.address?.village || '';
+          locationCountry = (g.address?.country_code || '').toUpperCase();
+          locationName = venueName || [locationCity, locationCountry].filter(Boolean).join(', ');
+        }
+      } catch {}
+    }
+
+    lastScanResult = {
+      data,
+      imageUrl: dataUrl,
+      latitude: gpsPosition?.latitude || null,
+      longitude: gpsPosition?.longitude || null,
+      locationName, locationCity, locationCountry,
+    };
+    renderScannerResult();
+    showToast(data.name ? `Recognized: ${data.name}` : 'Analysis complete');
+  } catch (err) {
+    console.error('Scanner error:', err);
+    showToast('Scan error: ' + (err.message || 'try again'));
+  } finally {
+    document.getElementById('scannerProcessing').style.display = 'none';
+  }
+}
+
+function renderScannerResult() {
+  const container = document.getElementById('scannerResult');
+  if (!container || !lastScanResult) return;
+  const d = lastScanResult.data;
+  const img = lastScanResult.imageUrl;
+  const score = d.criticScore || d.communityScore;
+  const chips = [];
+  if (d.type) chips.push(d.type);
+  if (d.region) chips.push(d.region);
+  if (d.grape) chips.push(d.grape);
+  if (d.age) chips.push(d.age + ' yr');
+  if (d.abv) chips.push(d.abv + '% ABV');
+  if (d.price) chips.push('~$' + Math.round(d.price));
+  const drinkWindow = (d.drinkFrom && d.drinkUntil) ? `Drink ${d.drinkFrom}–${d.drinkUntil}` : '';
+
+  container.innerHTML = `
+    <div class="scanner-result-card">
+      ${img ? `<img class="scanner-result-img" src="${img}" alt="${escHTML(d.name || 'Scanned bottle')}">` : ''}
+      <div class="scanner-result-body">
+        <div class="scanner-result-head">
+          <div>
+            <h2 class="scanner-result-title">${escHTML(d.name || 'Unknown bottle')}</h2>
+            <p class="scanner-result-sub">${escHTML(d.producer || '')}${d.vintage ? (d.producer ? ' · ' : '') + d.vintage : ''}</p>
+          </div>
+          ${score ? `<div class="scanner-score"><span class="scanner-score-num">${Math.round(score)}</span><span class="scanner-score-max">/100</span></div>` : ''}
+        </div>
+        ${chips.length ? `<div class="scanner-chips">${chips.map(c => `<span class="wine-detail-chip">${escHTML(String(c))}</span>`).join('')}</div>` : ''}
+        ${d.notes ? `<div class="scanner-notes"><label>Tasting Notes</label><p>${escHTML(d.notes)}</p></div>` : ''}
+        ${drinkWindow ? `<div class="scanner-drink">${drinkWindow}</div>` : ''}
+        <div class="scanner-actions">
+          <button class="btn btn-primary" onclick="scannerAddToCollection()">Add to Collection</button>
+          <button class="btn btn-secondary" onclick="scannerAddAsFind()">Add as Restaurant Find</button>
+          <a href="#" class="link-btn" onclick="resetScanner();return false">Scan another</a>
+        </div>
+      </div>
+    </div>`;
+  container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function scannerAddToCollection() {
+  if (!lastScanResult) return;
+  const d = lastScanResult.data;
+  editingBottleId = null;
+  switchView('add');
+  document.getElementById('addWineForm').reset();
+  document.getElementById('wineQuantity').value = 1;
+  updateAddViewTitle(false);
+  // populateFormFromScan handles category switch, fields and the AI rating
+  populateFormFromScan({ ...d, criticScore: d.criticScore || d.communityScore });
+  if (lastScanResult.imageUrl) setBottleImagePreview(lastScanResult.imageUrl, lastScanResult.imageUrl);
+  resetScanner();
+  showToast('Review the details, then save to your collection');
+}
+
+function scannerAddAsFind() {
+  if (!lastScanResult) return;
+  const d = lastScanResult.data;
+  const find = {
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 4),
+    name: d.name || 'Unknown',
+    producer: d.producer || '',
+    type: d.type || 'Red',
+    category: d.category || 'wine',
+    grape: d.grape || '',
+    region: d.region || '',
+    vintage: d.vintage || null,
+    notes: d.notes || '',
+    communityScore: d.criticScore || d.communityScore || null,
+    imageUrl: lastScanResult.imageUrl,
+    addedDate: new Date().toISOString().split('T')[0],
+    latitude: lastScanResult.latitude,
+    longitude: lastScanResult.longitude,
+    locationName: lastScanResult.locationName,
+    locationCity: lastScanResult.locationCity,
+    locationCountry: lastScanResult.locationCountry,
+  };
+  restaurantFinds.push(find);
+  saveFinds(restaurantFinds);
+  renderFinds();
+  resetScanner();
+  switchView('finds');
+  showToast(`Added "${find.name}" to your finds`);
+}
+
+function resetScanner() {
+  lastScanResult = null;
+  const r = document.getElementById('scannerResult');
+  if (r) r.innerHTML = '';
 }
 
 // ============ SHAREABLE CELLAR ============
