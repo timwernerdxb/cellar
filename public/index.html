@@ -49,6 +49,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2h8l-1 9H9L8 2z"/><path d="M9 11h6v1a3 3 0 01-3 3v0a3 3 0 01-3-3v-1z"/><line x1="12" y1="15" x2="12" y2="20"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
         Tasting Notes
       </a>
+      <a href="#" class="nav-item" data-view="scanner" onclick="switchView('scanner')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+        Scanner
+      </a>
       <a href="#" class="nav-item" data-view="finds" onclick="switchView('finds')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         Restaurant Finds
@@ -671,6 +675,51 @@
     </section>
 
     <!-- ==================== RESTAURANT FINDS VIEW ==================== -->
+    <!-- ==================== SCANNER VIEW ==================== -->
+    <section class="view" id="view-scanner">
+      <header class="view-header">
+        <div>
+          <h1>Scanner</h1>
+          <p class="subtitle">Scan any bottle to see its rating, tasting notes &amp; details</p>
+        </div>
+      </header>
+
+      <div class="scan-section">
+        <div class="scan-options" style="grid-template-columns: 1fr 1fr">
+          <div class="scan-option" onclick="startScannerScan()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </div>
+            <h4>Scan Bottle</h4>
+            <p>Point your camera at the label</p>
+          </div>
+          <div class="scan-option" onclick="document.getElementById('scannerImageUpload').click()">
+            <div class="scan-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <h4>Upload Image</h4>
+            <p>Select a photo of the label</p>
+          </div>
+        </div>
+        <input type="file" id="scannerImageUpload" accept="image/*" style="display:none" onchange="handleScannerImageUpload(event)">
+        <div class="camera-preview" id="scannerCameraPreview" style="display:none">
+          <video id="scannerCameraVideo" autoplay playsinline muted></video>
+          <div class="camera-overlay"><div class="camera-frame"></div></div>
+          <div class="camera-controls">
+            <button class="btn btn-secondary" onclick="cancelScannerScan()">Cancel</button>
+            <button class="btn btn-primary" onclick="captureScannerPhoto()">Capture</button>
+          </div>
+        </div>
+        <div class="scan-processing" id="scannerProcessing" style="display:none">
+          <div class="scan-spinner"></div>
+          <p>Analyzing bottle &amp; looking up rating...</p>
+        </div>
+        <canvas id="scannerCaptureCanvas" style="display:none"></canvas>
+      </div>
+
+      <div id="scannerResult"></div>
+    </section>
+
     <section class="view" id="view-finds">
       <header class="view-header">
         <div>
