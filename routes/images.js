@@ -3,7 +3,53 @@ const { authRequired } = require('../middleware/auth');
 const https = require('https');
 const http = require('http');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Serve a stored bottle photo. Public (no auth) so shared cellar pages can
+// display images; ids are unguessable UUIDs, same model as share tokens.
+router.get('/i/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Invalid image id' });
+  try {
+    const pool = req.app.locals.pool;
+    const result = await pool.query('SELECT mime, data FROM user_images WHERE id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Content-Type', result.rows[0].mime);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(result.rows[0].data);
+  } catch (err) {
+    console.error('Image fetch error:', err.message);
+    res.status(500).json({ error: 'Image fetch failed' });
+  }
+});
+
 router.use(authRequired);
+
+// Store a bottle photo server-side; returns a stable URL to reference it by.
+// Keeps base64 photos out of the client's localStorage (~5MB quota).
+router.post('/upload', async (req, res) => {
+  const { dataUrl } = req.body || {};
+  const match = typeof dataUrl === 'string'
+    ? dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif|avif));base64,([A-Za-z0-9+/=]+)$/i)
+    : null;
+  if (!match) return res.status(400).json({ error: 'Expected a base64 image data URL' });
+
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length === 0) return res.status(400).json({ error: 'Empty image' });
+  if (buffer.length > 5 * 1024 * 1024) return res.status(413).json({ error: 'Image too large (max 5MB)' });
+
+  try {
+    const pool = req.app.locals.pool;
+    const result = await pool.query(
+      'INSERT INTO user_images (user_id, mime, data) VALUES ($1, $2, $3) RETURNING id',
+      [req.userId, match[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : match[1].toLowerCase(), buffer]
+    );
+    res.json({ ok: true, url: `/api/images/i/${result.rows[0].id}` });
+  } catch (err) {
+    console.error('Image upload error:', err.message);
+    res.status(500).json({ error: 'Image upload failed' });
+  }
+});
 
 // Search for bottle images by query
 router.get('/search', async (req, res) => {

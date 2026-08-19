@@ -65,6 +65,8 @@ async function enterApp() {
   updateAuthUI();
   // Load data from server
   await syncFromServer();
+  // Move any photos still embedded in records to server storage (background)
+  migrateEmbeddedImages();
   // Load API key from server if not in localStorage
   try {
     const resp = await fetch('/api/settings', { credentials: 'include' });
@@ -280,9 +282,9 @@ async function syncFromServer() {
     cellar = data.bottles || [];
     tastings = data.tastings || [];
     restaurantFinds = data.finds || [];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cellar));
-    localStorage.setItem(TASTINGS_KEY, JSON.stringify(tastings));
-    localStorage.setItem(FINDS_KEY, JSON.stringify(restaurantFinds));
+    persistLocal(STORAGE_KEY, cellar);
+    persistLocal(TASTINGS_KEY, tastings);
+    persistLocal(FINDS_KEY, restaurantFinds);
     localStorage.setItem('vino_last_sync', new Date().toISOString());
     // Run migrations on freshly downloaded data (fix values, currency, etc.)
     runMigrations();
@@ -326,22 +328,93 @@ function loadCellar() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
 }
 function saveCellar(wines) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(wines));
+  persistLocal(STORAGE_KEY, wines);
   debouncedServerSync();
 }
 function loadTastings() {
   try { return JSON.parse(localStorage.getItem(TASTINGS_KEY)) || []; } catch { return []; }
 }
 function saveTastings(t) {
-  localStorage.setItem(TASTINGS_KEY, JSON.stringify(t));
+  persistLocal(TASTINGS_KEY, t);
   debouncedServerSync();
 }
 function loadFinds() {
   try { return JSON.parse(localStorage.getItem(FINDS_KEY)) || []; } catch { return []; }
 }
 function saveFinds(f) {
-  localStorage.setItem(FINDS_KEY, JSON.stringify(f));
+  persistLocal(FINDS_KEY, f);
   debouncedServerSync();
+}
+
+// localStorage caps out around 5MB; embedded base64 photos can exceed it.
+// On quota errors, retry without embedded photos — the full records (photos
+// included) still sync to the server, which is the source of truth.
+let storageFullWarned = false;
+function persistLocal(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (err) {
+    const isQuota = err && (err.name === 'QuotaExceededError' || err.code === 22);
+    if (!isQuota) throw err;
+    try {
+      const slim = Array.isArray(value)
+        ? value.map(item => (item && typeof item.imageUrl === 'string' && item.imageUrl.startsWith('data:'))
+            ? { ...item, imageUrl: null } : item)
+        : value;
+      localStorage.setItem(key, JSON.stringify(slim));
+    } catch { /* still full — rely on server sync */ }
+    if (!storageFullWarned) {
+      storageFullWarned = true;
+      showToast(currentUser
+        ? 'Device storage full — your data is safe in your cloud account.'
+        : 'Device storage full — sign in so your photos are kept in the cloud.');
+    }
+    return false;
+  }
+}
+
+// Move a base64 photo to the server; returns a small stable URL to store
+// instead. Falls back to the data URL when logged out or the upload fails.
+async function uploadBottleImage(dataUrl) {
+  if (!currentUser || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return dataUrl;
+  try {
+    const resp = await fetch('/api/images/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (!resp.ok) return dataUrl;
+    const data = await resp.json();
+    return data.url || dataUrl;
+  } catch {
+    return dataUrl;
+  }
+}
+
+// One-time cleanup: move photos embedded in existing records out of
+// localStorage and replace them with server URLs.
+async function migrateEmbeddedImages() {
+  if (!currentUser) return;
+  let changed = false;
+  for (const list of [cellar, restaurantFinds]) {
+    for (const item of list) {
+      if (item && typeof item.imageUrl === 'string' && item.imageUrl.startsWith('data:')) {
+        const url = await uploadBottleImage(item.imageUrl);
+        if (url && !url.startsWith('data:')) {
+          item.imageUrl = url;
+          changed = true;
+        }
+      }
+    }
+  }
+  if (changed) {
+    persistLocal(STORAGE_KEY, cellar);
+    persistLocal(FINDS_KEY, restaurantFinds);
+    debouncedServerSync();
+    renderDashboard(); renderCellar(); renderFinds();
+  }
 }
 
 // ============ MARKET VALUE ESTIMATION ============
@@ -2079,6 +2152,10 @@ Use your knowledge to estimate price, critic score, drinking window, grape/rice 
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
         const resized = canvas.toDataURL('image/jpeg', 0.8);
         setBottleImagePreview(resized, resized);
+        // Swap the stored value to a server URL so the photo doesn't live in localStorage
+        uploadBottleImage(resized).then(url => {
+          if (url !== resized && pendingBottleImage === resized) setBottleImagePreview(resized, url);
+        });
       };
       img.src = dataUrl;
     }
@@ -2484,7 +2561,7 @@ async function processFindImage(dataUrl) {
       vintage: data.vintage || null,
       notes: data.notes || '',
       communityScore: data.communityScore || null,
-      imageUrl: dataUrl,
+      imageUrl: await uploadBottleImage(dataUrl),
       addedDate: new Date().toISOString().split('T')[0],
       latitude: gpsPosition?.latitude || null,
       longitude: gpsPosition?.longitude || null,
@@ -2650,7 +2727,7 @@ Use your knowledge to estimate price, critic score, drinking window, grape/rice 
 
     lastScanResult = {
       data,
-      imageUrl: dataUrl,
+      imageUrl: await uploadBottleImage(dataUrl),
       latitude: gpsPosition?.latitude || null,
       longitude: gpsPosition?.longitude || null,
       locationName, locationCity, locationCountry,
@@ -3264,6 +3341,10 @@ function handleBottleImageUpload(event) {
       const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
       setBottleImagePreview(dataUrl, dataUrl);
       showToast('Photo added');
+      // Swap the stored value to a server URL so the photo doesn't live in localStorage
+      uploadBottleImage(dataUrl).then(url => {
+        if (url !== dataUrl && pendingBottleImage === dataUrl) setBottleImagePreview(dataUrl, url);
+      });
     };
     img.src = e.target.result;
   };
