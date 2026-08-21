@@ -879,6 +879,88 @@ async function runBatchScoring() {
   showToast(`Estimated scores for ${scored} items`);
 }
 
+// ---- Sake Polishing Rate Backfill ----
+async function runSakePolishBackfill() {
+  const apiKey = localStorage.getItem(API_KEY_STORAGE);
+  if (!apiKey) { showToast('Add your OpenAI API key in Settings first.'); return; }
+
+  const isSakeItem = x => x.category === 'sake' || isSake(x.type);
+  const sakeBottles = cellar.filter(b => isSakeItem(b) && !b.polishingRate && b.name);
+  const sakeFinds = restaurantFinds.filter(f => isSakeItem(f) && !f.polishingRate && f.name);
+  const allSake = [...sakeBottles, ...sakeFinds];
+  if (allSake.length === 0) { showToast('All sake already have polishing rates!'); return; }
+
+  const btn = document.getElementById('sakePolishBtn');
+  const statusEl = document.getElementById('sakePolishStatus');
+  if (btn) btn.disabled = true;
+
+  let filled = 0;
+  const total = allSake.length;
+  if (statusEl) statusEl.textContent = `Looking up 0/${total}...`;
+
+  const batchSize = 10;
+  for (let i = 0; i < allSake.length; i += batchSize) {
+    if (!checkDemoRateLimit()) break;
+    const batch = allSake.slice(i, i + batchSize);
+    const prompt = batch.map((b, idx) => {
+      const parts = [b.name, b.producer, b.type, b.grape, b.region].filter(Boolean);
+      return `${idx + 1}. ${parts.join(' | ')}`;
+    }).join('\n');
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{
+            role: 'user',
+            content: `For each sake below, give the rice polishing ratio (seimaibuai) as a percentage number, using your knowledge of the specific product (e.g. 50 means the rice is polished down to 50% of its original size; Junmai Daiginjo is 50 or below, Junmai Ginjo 60 or below, Junmai typically 70). If the exact product's ratio is known, use it; otherwise use the typical value for its classification. Return ONLY a JSON array of numbers, one per item, in the same order. Use null if you cannot estimate.\n\n${prompt}`
+          }],
+          max_tokens: 300,
+          temperature: 0.1,
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const errMsg = errData.error?.message || `API error ${response.status}`;
+        if (statusEl) statusEl.textContent = `Error: ${errMsg}`;
+        if (btn) btn.disabled = false;
+        showToast('Backfill error: ' + errMsg);
+        return;
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const rates = JSON.parse(jsonMatch[0]);
+        batch.forEach((b, idx) => {
+          const rate = rates[idx];
+          if (rate && typeof rate === 'number' && rate >= 1 && rate <= 99) {
+            b.polishingRate = Math.round(rate);
+            filled++;
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Polish backfill error:', err);
+    }
+
+    if (statusEl) statusEl.textContent = `Looking up ${Math.min(i + batchSize, total)}/${total}...`;
+    if (i + batchSize < allSake.length) await new Promise(r => setTimeout(r, 500));
+  }
+
+  saveCellar(cellar);
+  saveFinds(restaurantFinds);
+  renderCellar();
+  renderFinds();
+  if (statusEl) statusEl.textContent = `Done! Filled ${filled}/${total}.`;
+  if (btn) btn.disabled = false;
+  showToast(`Added polishing rates for ${filled} sake`);
+}
+
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
@@ -903,6 +985,7 @@ function setAddCategory(cat, btn) {
   const showSpirit = cat === 'whiskey' || cat === 'spirit' || cat === 'tequila' || cat === 'sake';
   document.querySelectorAll('.whiskey-field').forEach(el => el.style.display = showSpirit ? '' : 'none');
   document.querySelectorAll('.wine-field').forEach(el => el.style.display = showSpirit ? 'none' : '');
+  document.querySelectorAll('.sake-field').forEach(el => el.style.display = cat === 'sake' ? '' : 'none');
 
   // Update labels
   const labels = {
@@ -1542,6 +1625,7 @@ function addBottle(event) {
     category: isWhiskey(type) ? 'whiskey' : isTequila(type) ? 'tequila' : isSake(type) ? 'sake' : SPIRIT_TYPES.includes(type) ? 'spirit' : 'wine',
     age: isSW ? (parseInt(document.getElementById('whiskeyAge').value) || null) : null,
     abv: isSW ? (parseFloat(document.getElementById('whiskeyAbv').value) || null) : null,
+    polishingRate: isSake(type) ? (parseInt(document.getElementById('sakePolish').value) || null) : null,
     currency: 'USD',
     size: '750ml',
     imageUrl: pendingBottleImage || null,
@@ -1580,7 +1664,7 @@ function addBottle(event) {
 
       // Build edit history entry — track what changed
       const changes = [];
-      const trackFields = ['name','producer','type','vintage','region','grape','price','quantity','notes','age','abv','distillery'];
+      const trackFields = ['name','producer','type','vintage','region','grape','price','quantity','notes','age','abv','polishingRate','distillery'];
       for (const f of trackFields) {
         const oldVal = (existing[f] ?? '').toString();
         const newVal = (bottle[f] ?? '').toString();
@@ -1640,6 +1724,7 @@ function editBottle(id) {
   document.getElementById('wineNotes').value = w.notes || '';
   if (w.age) document.getElementById('whiskeyAge').value = w.age;
   if (w.abv) document.getElementById('whiskeyAbv').value = w.abv;
+  if (w.polishingRate) document.getElementById('sakePolish').value = w.polishingRate;
 
   // Show existing bottle image
   if (w.imageUrl) {
@@ -1831,6 +1916,7 @@ function openWineModal(id) {
       <div class="modal-detail-item"><label>Rating</label><div class="value" style="color:var(--gold)">${w.rating ? '★'.repeat(w.rating) + '☆'.repeat(5 - w.rating) : '<span style="color:var(--text-muted)">Not rated</span>'}</div></div>
       <div class="modal-detail-item"><label>Purchase Price</label><div class="value">${purchasePrice ? currSym + purchasePrice.toFixed(0) : '—'}</div></div>
       <div class="modal-detail-item"><label>Est. Market Value</label><div class="value" style="color:var(--success);font-weight:600">${currSym}${marketVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}${appreciation !== null ? ` <span style="font-size:0.75rem;margin-left:4px;color:${parseFloat(appreciation) >= 0 ? 'var(--success)' : 'var(--danger)'}">${parseFloat(appreciation) >= 0 ? '+' : ''}${appreciation}%</span>` : ''}</div></div>
+      ${isSake(w.type) && w.polishingRate ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${w.polishingRate}% seimaibuai</div></div>` : ''}
       ${w.appellation && w.appellation !== 'Unknown' ? `<div class="modal-detail-item"><label>Appellation</label><div class="value">${escHTML(w.appellation)}</div></div>` : ''}
       ${w.communityScore ? `<div class="modal-detail-item"><label>Community Score</label><div class="value">${w.communityScore}/100</div></div>` : ''}
     </div>
@@ -2095,6 +2181,7 @@ async function processLabelImage(dataUrl) {
   "region": "region, country",
   "age": age statement as number or null,
   "abv": ABV percentage as number or null,
+  "polishingRate": rice polishing ratio (seimaibuai) percentage for sake (e.g. 50 = polished to 50%) as number, or null for non-sake,
   "designation": "special designation/edition" or null,
   "size": "bottle size" or "750ml",
   "price": estimated retail price in USD as number or null,
@@ -2189,6 +2276,7 @@ function showScanResults(extracted) {
   if (extracted.region) fields.push('Region');
   if (extracted.age) fields.push('Age');
   if (extracted.abv) fields.push('ABV');
+  if (extracted.polishingRate) fields.push('Polishing Rate');
   result.innerHTML = `<h4>Label Recognized</h4><p><strong>${escHTML(extracted.name || 'Unknown')}</strong> — ${extracted.vintage || 'NV'}</p><div class="extracted-fields">${fields.map(f => `<span class="extracted-field">${f} detected</span>`).join('')}</div><p style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted)">Fields auto-filled below. Review before saving.</p>`;
 }
 
@@ -2211,6 +2299,7 @@ function populateFormFromScan(data) {
   if (data.drinkUntil) document.getElementById('wineDrinkUntil').value = data.drinkUntil;
   if (data.age) document.getElementById('whiskeyAge').value = data.age;
   if (data.abv) document.getElementById('whiskeyAbv').value = data.abv;
+  if (data.polishingRate) document.getElementById('sakePolish').value = data.polishingRate;
   if (data.notes) document.getElementById('wineNotes').value = data.notes;
   // Store AI-estimated critic score (out of 100)
   pendingScanRating = data.criticScore ? Math.min(100, Math.max(1, Math.round(data.criticScore))) : null;
@@ -2387,6 +2476,7 @@ function openFindModal(id) {
       <div class="modal-detail-item"><label>Type</label><div class="value">${escHTML(f.type || '—')}</div></div>
       <div class="modal-detail-item"><label>Category</label><div class="value">${escHTML((f.category || '—').charAt(0).toUpperCase() + (f.category || '—').slice(1))}</div></div>
       ${f.grape ? `<div class="modal-detail-item"><label>Grape / Varietal</label><div class="value">${escHTML(f.grape)}</div></div>` : ''}
+      ${f.polishingRate ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${f.polishingRate}% seimaibuai</div></div>` : ''}
       ${f.region ? `<div class="modal-detail-item"><label>Region</label><div class="value">${escHTML(f.region)}</div></div>` : ''}
       ${f.locationName || f.locationCity ? `<div class="modal-detail-item"><label>Found At</label><div class="value">${escHTML(f.locationName || '')}${f.locationCity ? ` <span style="color:var(--text-muted);font-size:0.82rem">${escHTML(f.locationCity)}${f.locationCountry ? ', ' + escHTML(f.locationCountry) : ''}</span>` : ''}${mapLink}</div></div>` : ''}
       <div class="modal-detail-item"><label>Date Found</label><div class="value">${formatDate(f.addedDate)}</div></div>
@@ -2426,6 +2516,7 @@ function addFindToCellar(id) {
   if (f.type) document.getElementById('wineType').value = f.type;
   if (f.grape) document.getElementById('wineGrape').value = f.grape;
   if (f.region) document.getElementById('wineRegion').value = f.region;
+  if (f.polishingRate) document.getElementById('sakePolish').value = f.polishingRate;
   if (f.notes) document.getElementById('wineNotes').value = f.notes;
   if (f.imageUrl) {
     const displayUrl = f.imageUrl.startsWith('data:') || f.imageUrl.startsWith('/') ? f.imageUrl : `/api/images/proxy?url=${encodeURIComponent(f.imageUrl)}`;
@@ -2516,7 +2607,7 @@ async function processFindImage(dataUrl) {
         model: 'gpt-4o',
         messages: [{ role: 'user', content: [
           { type: 'text', text: `Analyze this bottle label. Extract info AND use your knowledge to fill gaps. Return ONLY valid JSON:
-{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
+{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","polishingRate":rice polishing ratio (seimaibuai) % for sake as number or null,"notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
           { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
         ]}],
         max_tokens: 500,
@@ -2559,6 +2650,7 @@ async function processFindImage(dataUrl) {
       grape: data.grape || '',
       region: data.region || '',
       vintage: data.vintage || null,
+      polishingRate: data.polishingRate || null,
       notes: data.notes || '',
       communityScore: data.communityScore || null,
       imageUrl: await uploadBottleImage(dataUrl),
@@ -2675,6 +2767,7 @@ async function processScannerImage(dataUrl) {
   "region": "region, country",
   "age": age statement as number or null,
   "abv": ABV percentage as number or null,
+  "polishingRate": rice polishing ratio (seimaibuai) percentage for sake (e.g. 50 = polished to 50%) as number, or null for non-sake,
   "designation": "special designation/edition" or null,
   "size": "bottle size" or "750ml",
   "price": estimated retail price in USD as number or null,
@@ -2754,6 +2847,7 @@ function renderScannerResult() {
   if (d.grape) chips.push(d.grape);
   if (d.age) chips.push(d.age + ' yr');
   if (d.abv) chips.push(d.abv + '% ABV');
+  if (d.polishingRate) chips.push('Polished to ' + d.polishingRate + '%');
   if (d.price) chips.push('~$' + Math.round(d.price));
   const drinkWindow = (d.drinkFrom && d.drinkUntil) ? `Drink ${d.drinkFrom}–${d.drinkUntil}` : '';
 
@@ -2808,6 +2902,7 @@ function scannerAddAsFind() {
     grape: d.grape || '',
     region: d.region || '',
     vintage: d.vintage || null,
+    polishingRate: d.polishingRate || null,
     notes: d.notes || '',
     communityScore: d.criticScore || d.communityScore || null,
     imageUrl: lastScanResult.imageUrl,

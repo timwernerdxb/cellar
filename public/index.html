@@ -527,6 +527,12 @@
               <input type="number" id="whiskeyAbv" placeholder="e.g. 43" step="0.1" min="0" max="100">
             </div>
 
+            <!-- Sake-specific fields -->
+            <div class="form-group sake-field" id="polishField" style="display:none">
+              <label>Polishing Rate % (Seimaibuai)</label>
+              <input type="number" id="sakePolish" placeholder="e.g. 50" min="1" max="100">
+            </div>
+
             <div class="form-group">
               <label>Quantity</label>
               <input type="number" id="wineQuantity" value="1" min="1" max="999">
@@ -840,6 +846,18 @@
               Run Score Estimation
             </button>
             <span class="api-key-status" id="batchScoreStatus" style="font-size:0.8rem"></span>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>Sake Polishing Rates</h3>
+          <p class="settings-desc">Use AI to look up the rice polishing ratio (seimaibuai) for sake in your collection and restaurant finds that don't have one yet. Lower numbers mean more polished rice — e.g. Daiginjo is 50% or below.</p>
+          <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.5rem;justify-content:flex-start;align-items:center;gap:0.75rem">
+            <button class="btn btn-primary btn-sm" id="sakePolishBtn" onclick="runSakePolishBackfill()">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>
+              Backfill Polishing Rates
+            </button>
+            <span class="api-key-status" id="sakePolishStatus" style="font-size:0.8rem"></span>
           </div>
         </div>
 
