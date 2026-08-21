@@ -924,6 +924,7 @@ function verifySakePolish(record, onUpdated) {
         record.polishingRate = r.polishingRate;
         record.polishingRateAuto = true;
         record.polishingRateVerified = true;
+        if (r.abv && !record.abv) record.abv = r.abv;
         if (onUpdated) onUpdated(record);
       }
     });
@@ -2498,6 +2499,7 @@ function renderFinds() {
           <div class="find-card-details">
             <span class="wine-detail-chip">${escHTML(f.type || 'Wine')}</span>
             ${f.vintage ? `<span class="wine-detail-chip">${f.vintage}</span>` : ''}
+            ${f.abv ? `<span class="wine-detail-chip">${f.abv}% ABV</span>` : ''}
             ${f.polishingRate ? `<span class="wine-detail-chip">${f.polishingRate}% polish</span>` : ''}
             ${scoreChip}
           </div>
@@ -2532,6 +2534,7 @@ function openFindModal(id) {
       <div class="modal-detail-item"><label>Type</label><div class="value">${escHTML(f.type || '—')}</div></div>
       <div class="modal-detail-item"><label>Category</label><div class="value">${escHTML((f.category || '—').charAt(0).toUpperCase() + (f.category || '—').slice(1))}</div></div>
       ${f.grape ? `<div class="modal-detail-item"><label>Grape / Varietal</label><div class="value">${escHTML(f.grape)}</div></div>` : ''}
+      ${f.abv ? `<div class="modal-detail-item"><label>ABV</label><div class="value">${f.abv}%</div></div>` : ''}
       ${(f.category === 'sake' || isSake(f.type)) ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${f.polishingRate ? f.polishingRate + '% seimaibuai' : '—'} <a href="#" onclick="recheckFindPolish('${f.id}');return false" style="font-size:0.72rem;margin-left:6px;color:var(--accent)">re-check</a></div></div>` : ''}
       ${f.region ? `<div class="modal-detail-item"><label>Region</label><div class="value">${escHTML(f.region)}</div></div>` : ''}
       ${f.locationName || f.locationCity ? `<div class="modal-detail-item"><label>Found At</label><div class="value">${escHTML(f.locationName || '')}${f.locationCity ? ` <span style="color:var(--text-muted);font-size:0.82rem">${escHTML(f.locationCity)}${f.locationCountry ? ', ' + escHTML(f.locationCountry) : ''}</span>` : ''}${mapLink}</div></div>` : ''}
@@ -2558,6 +2561,7 @@ async function recheckBottlePolish(id) {
     w.polishingRate = r.polishingRate;
     w.polishingRateAuto = true;
     w.polishingRateVerified = true;
+    if (r.abv && !w.abv) w.abv = r.abv;
     saveCellar(cellar);
     renderCellar();
     openWineModal(id);
@@ -2578,6 +2582,7 @@ async function recheckFindPolish(id) {
     f.polishingRate = r.polishingRate;
     f.polishingRateAuto = true;
     f.polishingRateVerified = true;
+    if (r.abv && !f.abv) f.abv = r.abv;
     saveFinds(restaurantFinds);
     renderFinds();
     openFindModal(id);
@@ -2612,6 +2617,7 @@ function addFindToCellar(id) {
   if (f.type) document.getElementById('wineType').value = f.type;
   if (f.grape) document.getElementById('wineGrape').value = f.grape;
   if (f.region) document.getElementById('wineRegion').value = f.region;
+  if (f.abv) document.getElementById('whiskeyAbv').value = f.abv;
   if (f.polishingRate) document.getElementById('sakePolish').value = f.polishingRate;
   if (f.notes) document.getElementById('wineNotes').value = f.notes;
   if (f.imageUrl) {
@@ -2703,7 +2709,7 @@ async function processFindImage(dataUrl) {
         model: 'gpt-4o',
         messages: [{ role: 'user', content: [
           { type: 'text', text: `Analyze this bottle label. Extract info AND use your knowledge to fill gaps. Return ONLY valid JSON:
-{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit (sake: use highest matching grade — Junmai Daiginjo→Daiginjo, Junmai Ginjo→Ginjo; 純米大吟醸=Junmai Daiginjo)","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","polishingRate":rice polishing ratio (seimaibuai) % for sake as number or null,"notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
+{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit (sake: use highest matching grade — Junmai Daiginjo→Daiginjo, Junmai Ginjo→Ginjo; 純米大吟醸=Junmai Daiginjo)","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","abv":ABV percentage as number or null,"polishingRate":rice polishing ratio (seimaibuai) % for sake as number or null,"notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
           { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
         ]}],
         max_tokens: 500,
@@ -2746,6 +2752,7 @@ async function processFindImage(dataUrl) {
       grape: data.grape || '',
       region: data.region || '',
       vintage: data.vintage || null,
+      abv: data.abv || null,
       polishingRate: data.polishingRate || null,
       polishingRateAuto: false,
       notes: data.notes || '',
@@ -3006,6 +3013,7 @@ function scannerAddAsFind() {
     grape: d.grape || '',
     region: d.region || '',
     vintage: d.vintage || null,
+    abv: d.abv || null,
     polishingRate: d.polishingRate || null,
     polishingRateAuto: false,
     notes: d.notes || '',
