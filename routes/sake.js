@@ -6,7 +6,9 @@ const { authRequired } = require('../middleware/auth');
 let anthropic = null;
 if (process.env.ANTHROPIC_API_KEY) {
   const Anthropic = require('@anthropic-ai/sdk');
-  anthropic = new Anthropic();
+  // Bounded per-attempt timeout + single retry so a stuck upstream call fails
+  // fast enough for the client to report it instead of hanging the UI.
+  anthropic = new Anthropic({ timeout: 150000, maxRetries: 1 });
 }
 
 router.use(authRequired);
@@ -52,9 +54,11 @@ After your research, respond with ONLY a JSON array containing one object per it
   const requestParams = {
     model: 'claude-opus-5',
     max_tokens: 16000,
+    // Simple retrieval task — medium effort keeps latency reasonable
+    output_config: { effort: 'medium' },
     betas: ['server-side-fallback-2026-06-01'],
     fallbacks: [{ model: 'claude-opus-4-8' }],
-    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 10 }],
+    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: Math.min(2 * items.length, 8) }],
   };
 
   try {

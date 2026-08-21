@@ -883,20 +883,26 @@ async function runBatchScoring() {
 
 // Returns [{polishingRate, source}] aligned with items, or null on failure.
 async function enrichSake(items) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 170000);
   try {
     const resp = await fetch('/api/sake/enrich', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ items }),
+      signal: ctrl.signal,
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.error || `Lookup error ${resp.status}`);
     return Array.isArray(data.results) ? data.results : null;
   } catch (err) {
     console.warn('Sake enrich failed:', err.message);
-    if (err.message && !err.message.startsWith('Lookup error')) showToast(err.message);
+    if (err.name === 'AbortError') showToast('Sake lookup timed out — try again');
+    else if (err.message && !err.message.startsWith('Lookup error')) showToast(err.message);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -930,22 +936,28 @@ async function runSakePolishBackfill() {
   if (btn) btn.disabled = true;
 
   let filled = 0;
+  let failedBatches = 0;
   const total = allSake.length;
-  if (statusEl) statusEl.textContent = `Looking up 0/${total}... (web-verified, takes a moment)`;
 
-  // Server endpoint verifies via web search; small batches keep each request fast
-  const batchSize = 5;
+  // Server endpoint verifies via web search; small batches so progress is visible
+  const batchSize = 3;
   for (let i = 0; i < allSake.length; i += batchSize) {
     if (!checkDemoRateLimit()) break;
     const batch = allSake.slice(i, i + batchSize);
+    if (statusEl) statusEl.textContent = `Verifying ${i + 1}–${Math.min(i + batchSize, total)} of ${total} on the web... (~1 min per batch)`;
+
     const results = await enrichSake(batch.map(b => ({
       name: b.name, producer: b.producer, type: b.type, grape: b.grape, region: b.region,
     })));
 
     if (!results) {
-      if (statusEl) statusEl.textContent = `Stopped at ${i}/${total} — lookup failed, try again later.`;
-      if (btn) btn.disabled = false;
-      return;
+      // Skip this batch but keep going — partial progress beats none
+      failedBatches++;
+      if (failedBatches >= 3) {
+        if (statusEl) statusEl.textContent = `Stopped after repeated failures — ${filled} filled so far. Try again later.`;
+        break;
+      }
+      continue;
     }
 
     batch.forEach((b, idx) => {
@@ -957,14 +969,16 @@ async function runSakePolishBackfill() {
       }
     });
 
-    if (statusEl) statusEl.textContent = `Looking up ${Math.min(i + batchSize, total)}/${total}...`;
+    // Persist as we go so progress survives a closed tab
+    saveCellar(cellar);
+    saveFinds(restaurantFinds);
   }
 
   saveCellar(cellar);
   saveFinds(restaurantFinds);
   renderCellar();
   renderFinds();
-  if (statusEl) statusEl.textContent = `Done! Filled ${filled}/${total}.`;
+  if (statusEl && failedBatches < 3) statusEl.textContent = `Done! Filled ${filled}/${total}.`;
   if (btn) btn.disabled = false;
   showToast(`Added polishing rates for ${filled} sake`);
 }
