@@ -879,11 +879,43 @@ async function runBatchScoring() {
   showToast(`Estimated scores for ${scored} items`);
 }
 
+// ---- Sake Spec Lookup (server-side Claude + web search) ----
+
+// Returns [{polishingRate, source}] aligned with items, or null on failure.
+async function enrichSake(items) {
+  try {
+    const resp = await fetch('/api/sake/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ items }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `Lookup error ${resp.status}`);
+    return Array.isArray(data.results) ? data.results : null;
+  } catch (err) {
+    console.warn('Sake enrich failed:', err.message);
+    if (err.message && !err.message.startsWith('Lookup error')) showToast(err.message);
+    return null;
+  }
+}
+
+// After a scan identifies a sake by name, verify its polishing rate in the background.
+function verifySakePolish(record, onUpdated) {
+  if (!currentUser || !record.name) return;
+  enrichSake([{ name: record.name, producer: record.producer, type: record.type, grape: record.grape, region: record.region }])
+    .then(results => {
+      const r = results && results[0];
+      if (r && r.polishingRate && r.polishingRate !== record.polishingRate) {
+        record.polishingRate = r.polishingRate;
+        record.polishingRateAuto = true;
+        if (onUpdated) onUpdated(record);
+      }
+    });
+}
+
 // ---- Sake Polishing Rate Backfill ----
 async function runSakePolishBackfill() {
-  const apiKey = localStorage.getItem(API_KEY_STORAGE);
-  if (!apiKey) { showToast('Add your OpenAI API key in Settings first.'); return; }
-
   const isSakeItem = x => x.category === 'sake' || isSake(x.type);
   // Eligible: no rate yet, or a rate a previous backfill wrote (polishingRateAuto
   // !== false), so re-running refreshes AI values without touching manual entries.
@@ -899,61 +931,33 @@ async function runSakePolishBackfill() {
 
   let filled = 0;
   const total = allSake.length;
-  if (statusEl) statusEl.textContent = `Looking up 0/${total}...`;
+  if (statusEl) statusEl.textContent = `Looking up 0/${total}... (web-verified, takes a moment)`;
 
-  const batchSize = 10;
+  // Server endpoint verifies via web search; small batches keep each request fast
+  const batchSize = 5;
   for (let i = 0; i < allSake.length; i += batchSize) {
     if (!checkDemoRateLimit()) break;
     const batch = allSake.slice(i, i + batchSize);
-    const prompt = batch.map((b, idx) => {
-      const parts = [b.name, b.producer, b.type, b.grape, b.region].filter(Boolean);
-      return `${idx + 1}. ${parts.join(' | ')}`;
-    }).join('\n');
+    const results = await enrichSake(batch.map(b => ({
+      name: b.name, producer: b.producer, type: b.type, grape: b.grape, region: b.region,
+    })));
 
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [{
-            role: 'user',
-            content: `For each sake below, give the rice polishing ratio (seimaibuai) of that SPECIFIC product, as the percentage of the rice grain remaining after milling.\nRules:\n- Use the actual published seimaibuai of the exact product whenever you know it (these are widely documented for most exported sake).\n- Only if the exact product is unknown to you, estimate from that brewery's typical practice for the grade — real-world values vary widely between products, so your answers should NOT all be the same number and should NOT simply repeat legal classification limits.\n- Use null when you genuinely cannot say.\nReturn ONLY a JSON array of numbers/nulls, one per item, in the same order.\n\n${prompt}`
-          }],
-          max_tokens: 300,
-          temperature: 0.1,
-        })
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        const errMsg = errData.error?.message || `API error ${response.status}`;
-        if (statusEl) statusEl.textContent = `Error: ${errMsg}`;
-        if (btn) btn.disabled = false;
-        showToast('Backfill error: ' + errMsg);
-        return;
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const rates = JSON.parse(jsonMatch[0]);
-        batch.forEach((b, idx) => {
-          const rate = rates[idx];
-          if (rate && typeof rate === 'number' && rate >= 1 && rate <= 99) {
-            b.polishingRate = Math.round(rate);
-            b.polishingRateAuto = true;
-            filled++;
-          }
-        });
-      }
-    } catch (err) {
-      console.error('Polish backfill error:', err);
+    if (!results) {
+      if (statusEl) statusEl.textContent = `Stopped at ${i}/${total} — lookup failed, try again later.`;
+      if (btn) btn.disabled = false;
+      return;
     }
 
+    batch.forEach((b, idx) => {
+      const rate = results[idx] && results[idx].polishingRate;
+      if (rate) {
+        b.polishingRate = rate;
+        b.polishingRateAuto = true;
+        filled++;
+      }
+    });
+
     if (statusEl) statusEl.textContent = `Looking up ${Math.min(i + batchSize, total)}/${total}...`;
-    if (i + batchSize < allSake.length) await new Promise(r => setTimeout(r, 500));
   }
 
   saveCellar(cellar);
@@ -2234,6 +2238,19 @@ Use your knowledge to estimate price, critic score, drinking window, grape/rice 
     showScanResults(extracted);
     populateFormFromScan(extracted);
 
+    // Verify the sake polishing rate via web search once the label gave us a name
+    if (extracted.category === 'sake' && currentUser) {
+      const scannedRate = extracted.polishingRate || null;
+      verifySakePolish(extracted, () => {
+        const input = document.getElementById('sakePolish');
+        // Fill only if the user hasn't typed something else in the meantime
+        if (input && (!input.value || parseInt(input.value) === scannedRate)) {
+          input.value = extracted.polishingRate;
+          showToast(`Polishing rate verified: ${extracted.polishingRate}%`);
+        }
+      });
+    }
+
     // Auto-set label photo as bottle image if no image chosen yet
     if (!pendingBottleImage && dataUrl) {
       const img = new Image();
@@ -2674,6 +2691,9 @@ async function processFindImage(dataUrl) {
     saveFinds(restaurantFinds);
     renderFinds();
     showToast(`Added "${find.name}" to finds`);
+    if (find.category === 'sake' || isSake(find.type)) {
+      verifySakePolish(find, () => { saveFinds(restaurantFinds); renderFinds(); });
+    }
   } catch (err) {
     console.error('Find scan error:', err);
     showToast('Find scan error: ' + (err.message || 'try again'));
@@ -2836,6 +2856,10 @@ Use your knowledge to estimate price, critic score, drinking window, grape/rice 
     };
     renderScannerResult();
     showToast(data.name ? `Recognized: ${data.name}` : 'Analysis complete');
+    if ((data.category === 'sake' || isSake(data.type)) && currentUser) {
+      const thisScan = lastScanResult;
+      verifySakePolish(data, () => { if (lastScanResult === thisScan) renderScannerResult(); });
+    }
   } catch (err) {
     console.error('Scanner error:', err);
     showToast('Scan error: ' + (err.message || 'try again'));
@@ -2929,6 +2953,9 @@ function scannerAddAsFind() {
   resetScanner();
   switchView('finds');
   showToast(`Added "${find.name}" to your finds`);
+  if (find.category === 'sake' || isSake(find.type)) {
+    verifySakePolish(find, () => { saveFinds(restaurantFinds); renderFinds(); });
+  }
 }
 
 function resetScanner() {

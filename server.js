@@ -317,6 +317,7 @@ app.use('/api/tastings', require('./routes/tastings'));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/images', require('./routes/images'));
+app.use('/api/sake', require('./routes/sake'));
 app.use('/api/share', require('./routes/share'));
 
 // Serve bottle image for share page (public, validated by share token)
