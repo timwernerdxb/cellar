@@ -43,7 +43,7 @@ router.post('/enrich', async (req, res) => {
   }).join('\n');
 
   const prompt = `For each sake below, find its rice polishing ratio (seimaibuai) — the percentage of the rice grain remaining after milling (e.g. 50 means polished down to 50%).
-Use web search to check the brewery's, importer's, or retailers' product pages and prefer the published specification. If the exact product cannot be verified, you may give a confident estimate for that brewery and grade; otherwise use null. Real products vary widely — do not default every item to the same number.
+Use web search to check the brewery's, importer's, or retailers' product pages and prefer the published specification. The grade/type listed for an item may be wrong or incomplete (e.g. a Junmai Daiginjo recorded as just "Junmai") — verify the product's actual classification online and report the true published seimaibuai, never a value merely typical for the listed grade. If the exact product cannot be verified, estimate from the brewery's actual classification and practice; otherwise use null. Real products vary widely — do not default every item to the same number.
 
 Sake to look up:
 ${list}
