@@ -1953,7 +1953,7 @@ function openWineModal(id) {
       <div class="modal-detail-item"><label>Rating</label><div class="value" style="color:var(--gold)">${w.rating ? '★'.repeat(w.rating) + '☆'.repeat(5 - w.rating) : '<span style="color:var(--text-muted)">Not rated</span>'}</div></div>
       <div class="modal-detail-item"><label>Purchase Price</label><div class="value">${purchasePrice ? currSym + purchasePrice.toFixed(0) : '—'}</div></div>
       <div class="modal-detail-item"><label>Est. Market Value</label><div class="value" style="color:var(--success);font-weight:600">${currSym}${marketVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}${appreciation !== null ? ` <span style="font-size:0.75rem;margin-left:4px;color:${parseFloat(appreciation) >= 0 ? 'var(--success)' : 'var(--danger)'}">${parseFloat(appreciation) >= 0 ? '+' : ''}${appreciation}%</span>` : ''}</div></div>
-      ${isSake(w.type) && w.polishingRate ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${w.polishingRate}% seimaibuai</div></div>` : ''}
+      ${isSake(w.type) ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${w.polishingRate ? w.polishingRate + '% seimaibuai' : '—'} <a href="#" onclick="recheckBottlePolish('${w.id}');return false" style="font-size:0.72rem;margin-left:6px;color:var(--accent)">re-check</a></div></div>` : ''}
       ${w.appellation && w.appellation !== 'Unknown' ? `<div class="modal-detail-item"><label>Appellation</label><div class="value">${escHTML(w.appellation)}</div></div>` : ''}
       ${w.communityScore ? `<div class="modal-detail-item"><label>Community Score</label><div class="value">${w.communityScore}/100</div></div>` : ''}
     </div>
@@ -2540,6 +2540,26 @@ function openFindModal(id) {
     </div>
     <div id="similarResults-${f.id}"></div>`;
   document.getElementById('wineModal').classList.add('open');
+}
+
+// Force a fresh web lookup of a collection bottle's polishing rate
+async function recheckBottlePolish(id) {
+  const w = cellar.find(b => b.id === id);
+  if (!w) return;
+  showToast('Re-checking polishing rate on the web...');
+  const results = await enrichSake([{ name: w.name, producer: w.producer, type: w.type, grape: w.grape, region: w.region }]);
+  const r = results && results[0];
+  if (r && r.polishingRate) {
+    w.polishingRate = r.polishingRate;
+    w.polishingRateAuto = true;
+    w.polishingRateVerified = true;
+    saveCellar(cellar);
+    renderCellar();
+    openWineModal(id);
+    showToast(`Polishing rate: ${r.polishingRate}%${r.source ? ' (' + r.source + ')' : ''}`);
+  } else {
+    showToast('Could not verify — try again later');
+  }
 }
 
 // Force a fresh web lookup of a find's polishing rate, bypassing the verified flag
