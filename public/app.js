@@ -2212,7 +2212,7 @@ async function processLabelImage(dataUrl) {
   "name": "full product name",
   "producer": "producer/brand/distillery/winery/brewery",
   "vintage": year as number or null,
-  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Vodka","Other Spirit",
+  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Vodka","Other Spirit" (for sake, map the full grade to the highest matching class: Junmai Daiginjo → "Daiginjo", Junmai Ginjo → "Ginjo" — read the kanji, e.g. 純米大吟醸 = Junmai Daiginjo; never downgrade a Daiginjo to "Junmai"),
   "category": "wine" or "whiskey" or "tequila" or "sake" or "spirit",
   "grape": "grape varietal, or rice type for sake (e.g. Yamada Nishiki), or grain/base ingredient for spirits" or null,
   "region": "region, country",
@@ -2527,7 +2527,7 @@ function openFindModal(id) {
       <div class="modal-detail-item"><label>Type</label><div class="value">${escHTML(f.type || '—')}</div></div>
       <div class="modal-detail-item"><label>Category</label><div class="value">${escHTML((f.category || '—').charAt(0).toUpperCase() + (f.category || '—').slice(1))}</div></div>
       ${f.grape ? `<div class="modal-detail-item"><label>Grape / Varietal</label><div class="value">${escHTML(f.grape)}</div></div>` : ''}
-      ${f.polishingRate ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${f.polishingRate}% seimaibuai</div></div>` : ''}
+      ${(f.category === 'sake' || isSake(f.type)) ? `<div class="modal-detail-item"><label>Polishing Rate</label><div class="value">${f.polishingRate ? f.polishingRate + '% seimaibuai' : '—'} <a href="#" onclick="recheckFindPolish('${f.id}');return false" style="font-size:0.72rem;margin-left:6px;color:var(--accent)">re-check</a></div></div>` : ''}
       ${f.region ? `<div class="modal-detail-item"><label>Region</label><div class="value">${escHTML(f.region)}</div></div>` : ''}
       ${f.locationName || f.locationCity ? `<div class="modal-detail-item"><label>Found At</label><div class="value">${escHTML(f.locationName || '')}${f.locationCity ? ` <span style="color:var(--text-muted);font-size:0.82rem">${escHTML(f.locationCity)}${f.locationCountry ? ', ' + escHTML(f.locationCountry) : ''}</span>` : ''}${mapLink}</div></div>` : ''}
       <div class="modal-detail-item"><label>Date Found</label><div class="value">${formatDate(f.addedDate)}</div></div>
@@ -2540,6 +2540,26 @@ function openFindModal(id) {
     </div>
     <div id="similarResults-${f.id}"></div>`;
   document.getElementById('wineModal').classList.add('open');
+}
+
+// Force a fresh web lookup of a find's polishing rate, bypassing the verified flag
+async function recheckFindPolish(id) {
+  const f = restaurantFinds.find(x => x.id === id);
+  if (!f) return;
+  showToast('Re-checking polishing rate on the web...');
+  const results = await enrichSake([{ name: f.name, producer: f.producer, type: f.type, grape: f.grape, region: f.region }]);
+  const r = results && results[0];
+  if (r && r.polishingRate) {
+    f.polishingRate = r.polishingRate;
+    f.polishingRateAuto = true;
+    f.polishingRateVerified = true;
+    saveFinds(restaurantFinds);
+    renderFinds();
+    openFindModal(id);
+    showToast(`Polishing rate: ${r.polishingRate}%${r.source ? ' (' + r.source + ')' : ''}`);
+  } else {
+    showToast('Could not verify — try again later');
+  }
 }
 
 function removeFind(id) {
@@ -2658,7 +2678,7 @@ async function processFindImage(dataUrl) {
         model: 'gpt-4o',
         messages: [{ role: 'user', content: [
           { type: 'text', text: `Analyze this bottle label. Extract info AND use your knowledge to fill gaps. Return ONLY valid JSON:
-{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","polishingRate":rice polishing ratio (seimaibuai) % for sake as number or null,"notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
+{"name":"full name","producer":"producer/winery","vintage":year or null,"type":"Red/White/Rosé/Sparkling/Champagne/Dessert/Fortified/Scotch/Bourbon/Irish/Japanese/Rye/Single Malt/Blended/Tennessee/Tequila/Mezcal/Junmai/Ginjo/Daiginjo/Nigori/Sparkling Sake/Sake/Rum/Cognac/Brandy/Gin/Vodka/Other Spirit (sake: use highest matching grade — Junmai Daiginjo→Daiginjo, Junmai Ginjo→Ginjo; 純米大吟醸=Junmai Daiginjo)","category":"wine/whiskey/tequila/sake/spirit","grape":"varietal or null","region":"region, country","polishingRate":rice polishing ratio (seimaibuai) % for sake as number or null,"notes":"brief tasting profile (2-3 sentences)" or null,"communityScore": 0-100 critic/community consensus score based on your knowledge (Vivino, Wine-Searcher, etc) or null if unknown}` },
           { type: 'image_url', image_url: { url: dataUrl, detail: 'low' } }
         ]}],
         max_tokens: 500,
@@ -2816,7 +2836,7 @@ async function processScannerImage(dataUrl) {
   "name": "full product name",
   "producer": "producer/brand/distillery/winery/brewery",
   "vintage": year as number or null,
-  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Vodka","Other Spirit",
+  "type": one of "Red","White","Rosé","Sparkling","Champagne","Dessert","Fortified","Scotch","Bourbon","Irish","Japanese","Rye","Single Malt","Blended","Tennessee","Tequila","Mezcal","Junmai","Ginjo","Daiginjo","Nigori","Sparkling Sake","Sake","Rum","Cognac","Brandy","Gin","Vodka","Other Spirit" (for sake, map the full grade to the highest matching class: Junmai Daiginjo → "Daiginjo", Junmai Ginjo → "Ginjo" — read the kanji, e.g. 純米大吟醸 = Junmai Daiginjo; never downgrade a Daiginjo to "Junmai"),
   "category": "wine" or "whiskey" or "tequila" or "sake" or "spirit",
   "grape": "grape varietal, or rice type for sake, or grain/base ingredient for spirits" or null,
   "region": "region, country",
