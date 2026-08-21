@@ -24,8 +24,16 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false 
 app.use(express.json({ limit: '20mb' }));
 app.use(cookieParser());
 
-// Static files
-app.use(express.static(path.join(__dirname, 'public')));
+// Static files. no-cache forces browsers to revalidate HTML/JS/CSS on every
+// load (cheap 304s via ETag), so deploys reach clients immediately instead of
+// Safari serving week-old cached app.js.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(html|js|css)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 // Auto-run migrations on startup
 const fs = require('fs');
