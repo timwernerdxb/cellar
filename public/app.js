@@ -29,6 +29,7 @@ let currentUser = null;
 let isDemoAccount = false;
 const DEMO_RATE_LIMIT = { maxPerHour: 20, calls: [], };
 let syncTimer = null;
+let backfillPollTimer = null; // set while a server-side polishing backfill is running
 let authMode = 'login'; // 'login' or 'register'
 
 async function checkAuthState() {
@@ -67,6 +68,8 @@ async function enterApp() {
   await syncFromServer();
   // Move any photos still embedded in records to server storage (background)
   migrateEmbeddedImages();
+  // Resume progress display if a polishing backfill is still running server-side
+  checkBackfillInProgress();
   // Load API key from server if not in localStorage
   try {
     const resp = await fetch('/api/settings', { credentials: 'include' });
@@ -253,7 +256,12 @@ async function logout() {
 function debouncedServerSync() {
   if (!currentUser) return;
   if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => syncToServer(), 1000);
+  syncTimer = setTimeout(() => {
+    // Hold uploads while a server-side backfill is writing rates — a full
+    // upload from stale local data would overwrite them. Retry shortly.
+    if (backfillPollTimer) { debouncedServerSync(); return; }
+    syncToServer();
+  }, backfillPollTimer ? 5000 : 1000);
 }
 
 async function syncToServer() {
@@ -921,75 +929,72 @@ function verifySakePolish(record, onUpdated) {
     });
 }
 
-// ---- Sake Polishing Rate Backfill ----
-async function runSakePolishBackfill() {
-  const isSakeItem = x => x.category === 'sake' || isSake(x.type);
-  // Eligible: no rate yet, or a stale AI guess (auto but not yet web-verified).
-  // Manual entries (auto === false) and web-verified values are left alone.
-  const eligible = x => isSakeItem(x) && x.name &&
-    (!x.polishingRate || (x.polishingRateAuto !== false && !x.polishingRateVerified));
-  const sakeBottles = cellar.filter(eligible);
-  const sakeFinds = restaurantFinds.filter(eligible);
-  const allSake = [...sakeBottles, ...sakeFinds];
-  if (allSake.length === 0) { showToast('All sake already have polishing rates!'); return; }
+// ---- Sake Polishing Rate Backfill (server-side background job) ----
+// The job runs entirely on the server against synced data, so closing the
+// app doesn't interrupt it. The client only starts it and polls progress.
 
+async function runSakePolishBackfill() {
   const btn = document.getElementById('sakePolishBtn');
   const statusEl = document.getElementById('sakePolishStatus');
-  if (btn) btn.disabled = true;
-
-  let filled = 0;
-  let failedBatches = 0;
-  const total = allSake.length;
-
-  // Server endpoint verifies via web search; small batches so progress is visible
-  const batchSize = 3;
-  for (let i = 0; i < allSake.length; i += batchSize) {
-    if (!checkDemoRateLimit()) break;
-    const batch = allSake.slice(i, i + batchSize);
-    if (statusEl) statusEl.textContent = `Verifying ${i + 1}–${Math.min(i + batchSize, total)} of ${total} on the web... (~1 min per batch)`;
-
-    const payload = batch.map(b => ({
-      name: b.name, producer: b.producer, type: b.type, grape: b.grape, region: b.region,
-    }));
-    let results = await enrichSake(payload);
-    if (!results) {
-      // One retry — the first calls after a server cold start often time out
-      await new Promise(r => setTimeout(r, 2000));
-      results = await enrichSake(payload);
+  try {
+    const resp = await fetch('/api/sake/backfill/start', { method: 'POST', credentials: 'include' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) { showToast(data.error || 'Could not start backfill'); return; }
+    if (data.done && data.total === 0) { showToast('All sake already have verified polishing rates!'); return; }
+    if (btn) btn.disabled = true;
+    if (statusEl) {
+      statusEl.textContent = data.alreadyRunning
+        ? 'Backfill already running in the background...'
+        : `Verifying ${data.total} sake in the background — you can close the app.`;
     }
-
-    if (!results) {
-      // Skip this batch but keep going — partial progress beats none
-      failedBatches++;
-      if (failedBatches >= 3) {
-        if (statusEl) statusEl.textContent = `Stopped after repeated failures — ${filled} filled so far. Try again later.`;
-        break;
-      }
-      continue;
-    }
-
-    batch.forEach((b, idx) => {
-      const rate = results[idx] && results[idx].polishingRate;
-      if (rate) {
-        b.polishingRate = rate;
-        b.polishingRateAuto = true;
-        b.polishingRateVerified = true;
-        filled++;
-      }
-    });
-
-    // Persist as we go so progress survives a closed tab
-    saveCellar(cellar);
-    saveFinds(restaurantFinds);
+    pollBackfillStatus();
+  } catch {
+    showToast('Could not start backfill — check your connection');
   }
+}
 
-  saveCellar(cellar);
-  saveFinds(restaurantFinds);
-  renderCellar();
-  renderFinds();
-  if (statusEl && failedBatches < 3) statusEl.textContent = `Done! Filled ${filled}/${total}.`;
-  if (btn) btn.disabled = false;
-  showToast(`Added polishing rates for ${filled} sake`);
+function pollBackfillStatus() {
+  if (backfillPollTimer) clearInterval(backfillPollTimer);
+  backfillPollTimer = setInterval(async () => {
+    const btn = document.getElementById('sakePolishBtn');
+    const statusEl = document.getElementById('sakePolishStatus');
+    try {
+      const resp = await fetch('/api/sake/backfill/status', { credentials: 'include' });
+      if (!resp.ok) return;
+      const s = await resp.json();
+      if (s.none) {
+        clearInterval(backfillPollTimer); backfillPollTimer = null;
+        if (btn) btn.disabled = false;
+        return;
+      }
+      if (s.running) {
+        if (btn) btn.disabled = true;
+        if (statusEl) statusEl.textContent = `Verifying ${s.processed}/${s.total} in the background... (${s.filled} filled so far)`;
+      } else if (s.done) {
+        clearInterval(backfillPollTimer); backfillPollTimer = null;
+        if (btn) btn.disabled = false;
+        if (statusEl) {
+          statusEl.textContent = s.error
+            ? `${s.error} — ${s.filled}/${s.total} filled.`
+            : `Done! Filled ${s.filled}/${s.total}.`;
+        }
+        // Pull the server-written rates into local data and re-render
+        await syncFromServer();
+        renderFinds();
+        showToast(`Polishing rates updated for ${s.filled} sake`);
+      }
+    } catch { /* transient poll failure — keep polling */ }
+  }, 4000);
+}
+
+// On app start, resume progress display if a backfill is still running server-side
+async function checkBackfillInProgress() {
+  try {
+    const resp = await fetch('/api/sake/backfill/status', { credentials: 'include' });
+    if (!resp.ok) return;
+    const s = await resp.json();
+    if (s.running) pollBackfillStatus();
+  } catch { /* not critical */ }
 }
 
 function initTheme() {
