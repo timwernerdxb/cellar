@@ -97,7 +97,7 @@ After your research, respond with ONLY a JSON array containing one object per it
     });
   } catch (err) {
     console.error('Sake enrich error:', err.message);
-    res.status(502).json({ error: 'AI lookup failed' });
+    res.status(502).json({ error: 'AI lookup failed: ' + String(err.message || err).slice(0, 200) });
   }
 });
 
