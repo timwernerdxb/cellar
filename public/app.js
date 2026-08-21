@@ -970,7 +970,9 @@ function pollBackfillStatus() {
       }
       if (s.running) {
         if (btn) btn.disabled = true;
-        if (statusEl) statusEl.textContent = `Verifying ${s.processed}/${s.total} in the background... (${s.filled} filled so far)`;
+        const mins = s.elapsedSeconds ? Math.floor(s.elapsedSeconds / 60) : 0;
+        const elapsed = s.elapsedSeconds ? ` · running ${mins}m ${s.elapsedSeconds % 60}s` : '';
+        if (statusEl) statusEl.textContent = `Verifying ${s.processed}/${s.total} in the background (${s.filled} filled${elapsed})`;
       } else if (s.done) {
         clearInterval(backfillPollTimer); backfillPollTimer = null;
         if (btn) btn.disabled = false;
