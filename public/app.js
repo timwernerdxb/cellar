@@ -3128,6 +3128,7 @@ function renderSharedView(data, container) {
         </div>
         <div class="wine-card-details">
           <span class="wine-detail-chip">${escHTML(b.type || '—')}</span>
+          ${isSake(b.type) && b.polishingRate ? `<span class="wine-detail-chip">${b.polishingRate}% polish</span>` : ''}
           ${b.region ? `<span class="wine-detail-chip">${escHTML(b.region)}</span>` : ''}
           ${b.grape ? `<span class="wine-detail-chip">${escHTML(b.grape)}</span>` : ''}
         </div>
