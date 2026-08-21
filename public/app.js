@@ -885,8 +885,11 @@ async function runSakePolishBackfill() {
   if (!apiKey) { showToast('Add your OpenAI API key in Settings first.'); return; }
 
   const isSakeItem = x => x.category === 'sake' || isSake(x.type);
-  const sakeBottles = cellar.filter(b => isSakeItem(b) && !b.polishingRate && b.name);
-  const sakeFinds = restaurantFinds.filter(f => isSakeItem(f) && !f.polishingRate && f.name);
+  // Eligible: no rate yet, or a rate a previous backfill wrote (polishingRateAuto
+  // !== false), so re-running refreshes AI values without touching manual entries.
+  const eligible = x => isSakeItem(x) && x.name && (!x.polishingRate || x.polishingRateAuto !== false);
+  const sakeBottles = cellar.filter(eligible);
+  const sakeFinds = restaurantFinds.filter(eligible);
   const allSake = [...sakeBottles, ...sakeFinds];
   if (allSake.length === 0) { showToast('All sake already have polishing rates!'); return; }
 
@@ -912,10 +915,10 @@ async function runSakePolishBackfill() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-4o',
           messages: [{
             role: 'user',
-            content: `For each sake below, give the rice polishing ratio (seimaibuai) as a percentage number, using your knowledge of the specific product (e.g. 50 means the rice is polished down to 50% of its original size; Junmai Daiginjo is 50 or below, Junmai Ginjo 60 or below, Junmai typically 70). If the exact product's ratio is known, use it; otherwise use the typical value for its classification. Return ONLY a JSON array of numbers, one per item, in the same order. Use null if you cannot estimate.\n\n${prompt}`
+            content: `For each sake below, give the rice polishing ratio (seimaibuai) of that SPECIFIC product, as the percentage of the rice grain remaining after milling.\nRules:\n- Use the actual published seimaibuai of the exact product whenever you know it (these are widely documented for most exported sake).\n- Only if the exact product is unknown to you, estimate from that brewery's typical practice for the grade — real-world values vary widely between products, so your answers should NOT all be the same number and should NOT simply repeat legal classification limits.\n- Use null when you genuinely cannot say.\nReturn ONLY a JSON array of numbers/nulls, one per item, in the same order.\n\n${prompt}`
           }],
           max_tokens: 300,
           temperature: 0.1,
@@ -940,6 +943,7 @@ async function runSakePolishBackfill() {
           const rate = rates[idx];
           if (rate && typeof rate === 'number' && rate >= 1 && rate <= 99) {
             b.polishingRate = Math.round(rate);
+            b.polishingRateAuto = true;
             filled++;
           }
         });
@@ -1145,7 +1149,7 @@ function cardSmHTML(w, extraLabel) {
         <span class="wine-type-dot type-${typeClass}"></span>
         ${escHTML(w.name)}
       </div>
-      <div class="wine-meta">${w.vintage || 'NV'} · ${escHTML(w.producer || w.region || w.grape || '')}${w.age ? ' · ' + w.age + 'yr' : ''}</div>
+      <div class="wine-meta">${w.vintage || 'NV'} · ${escHTML(w.producer || w.region || w.grape || '')}${w.age ? ' · ' + w.age + 'yr' : ''}${isSake(w.type) && w.polishingRate ? ' · ' + w.polishingRate + '% polish' : ''}</div>
       ${extraLabel ? `<span class="wine-value-tag">${extraLabel}</span>` : `<span class="wine-status status-${status.class}">${status.label}</span>`}
     </div>`;
 }
@@ -1451,7 +1455,7 @@ function renderCellar() {
       ? `${escHTML(w.producer || '')}${w.age ? ' · ' + w.age + ' Year' : ''}${w.designation ? ' · ' + escHTML(w.designation) : ''}`
       : `${escHTML(w.producer || '')} ${w.vintage ? '· ' + w.vintage : ''}`;
     const detailChips = isSW
-      ? `<span class="wine-detail-chip">${escHTML(w.type)}</span>${w.abv ? `<span class="wine-detail-chip">${w.abv}% ABV</span>` : ''}${w.size && w.size !== '750ml' ? `<span class="wine-detail-chip">${w.size}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`
+      ? `<span class="wine-detail-chip">${escHTML(w.type)}</span>${isSake(w.type) && w.polishingRate ? `<span class="wine-detail-chip">${w.polishingRate}% polish</span>` : ''}${w.abv ? `<span class="wine-detail-chip">${w.abv}% ABV</span>` : ''}${w.size && w.size !== '750ml' ? `<span class="wine-detail-chip">${w.size}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`
       : `<span class="wine-detail-chip">${escHTML(w.type)}</span>${w.grape ? `<span class="wine-detail-chip">${escHTML(w.grape)}</span>` : ''}${w.region ? `<span class="wine-detail-chip">${escHTML(w.region.split(',')[0])}</span>` : ''}`;
 
     const isConsumed = w.status === 'consumed';
@@ -1626,6 +1630,7 @@ function addBottle(event) {
     age: isSW ? (parseInt(document.getElementById('whiskeyAge').value) || null) : null,
     abv: isSW ? (parseFloat(document.getElementById('whiskeyAbv').value) || null) : null,
     polishingRate: isSake(type) ? (parseInt(document.getElementById('sakePolish').value) || null) : null,
+    polishingRateAuto: false,
     currency: 'USD',
     size: '750ml',
     imageUrl: pendingBottleImage || null,
@@ -1653,6 +1658,8 @@ function addBottle(event) {
       bottle.pending = existing.pending;
       bottle.country = existing.country;
       bottle.subRegion = existing.subRegion;
+      // Keep the AI/manual provenance flag unless the user actually changed the rate
+      if ((bottle.polishingRate || null) === (existing.polishingRate || null)) bottle.polishingRateAuto = existing.polishingRateAuto;
       if (!bottle.imageUrl) bottle.imageUrl = existing.imageUrl;
       // Preserve CSV market value if it existed — only re-estimate if price changed
       if (existing.marketValue && existing.marketValue > 0) {
@@ -2443,6 +2450,7 @@ function renderFinds() {
           <div class="find-card-details">
             <span class="wine-detail-chip">${escHTML(f.type || 'Wine')}</span>
             ${f.vintage ? `<span class="wine-detail-chip">${f.vintage}</span>` : ''}
+            ${f.polishingRate ? `<span class="wine-detail-chip">${f.polishingRate}% polish</span>` : ''}
             ${scoreChip}
           </div>
           <div class="find-card-footer">
@@ -2651,6 +2659,7 @@ async function processFindImage(dataUrl) {
       region: data.region || '',
       vintage: data.vintage || null,
       polishingRate: data.polishingRate || null,
+      polishingRateAuto: false,
       notes: data.notes || '',
       communityScore: data.communityScore || null,
       imageUrl: await uploadBottleImage(dataUrl),
@@ -2903,6 +2912,7 @@ function scannerAddAsFind() {
     region: d.region || '',
     vintage: d.vintage || null,
     polishingRate: d.polishingRate || null,
+    polishingRateAuto: false,
     notes: d.notes || '',
     communityScore: d.criticScore || d.communityScore || null,
     imageUrl: lastScanResult.imageUrl,
