@@ -581,6 +581,7 @@ function buildSharePage(data) {
       </div>
       <div class="card-chips">
         <span class="chip">${esc(b.type||'—')}</span>
+        ${cat==='sake'&&b.polishingRate?`<span class="chip">${b.polishingRate}% polish</span>`:''}
         ${b.region?`<span class="chip">${esc(b.region)}</span>`:''}
         ${b.grape?`<span class="chip">${esc(b.grape)}</span>`:''}
       </div>
@@ -607,6 +608,7 @@ function buildSharePage(data) {
     size: b.size || '',
     abv: b.abv || null,
     age: b.age || null,
+    polishingRate: b.polishingRate || null,
     quantity: b.quantity || 1,
     marketValue: showValues ? (b.marketValue || null) : null,
     imageUrl: b.imageUrl || '',
@@ -629,6 +631,8 @@ function buildSharePage(data) {
       </div>
       <div class="card-chips">
         <span class="chip">${esc(f.type||'—')}</span>
+        ${getCat(f.type)==='sake'&&f.polishingRate?`<span class="chip">${f.polishingRate}% polish</span>`:''}
+        ${f.abv?`<span class="chip">${f.abv}% ABV</span>`:''}
         ${f.region?`<span class="chip">${esc(f.region)}</span>`:''}
       </div>
       ${loc ? `<div class="find-loc"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${esc(loc)}</div>` : ''}
@@ -649,6 +653,7 @@ function buildSharePage(data) {
     locationCountry: f.locationCountry || '',
     imageUrl: f.imageUrl || '',
     abv: f.abv || null,
+    polishingRate: f.polishingRate || null,
     price: f.price || null,
   }));
 
@@ -777,6 +782,7 @@ function buildSharePage(data) {
         (f.grape ? '<div class="modal-field"><label>Grape</label><div class="val">' + esc(f.grape) + '</div></div>' : '') +
         (f.region ? '<div class="modal-field"><label>Region</label><div class="val">' + esc(f.region) + '</div></div>' : '') +
         (f.abv ? '<div class="modal-field"><label>ABV</label><div class="val">' + f.abv + '%</div></div>' : '') +
+        (f.polishingRate ? '<div class="modal-field"><label>Polishing Rate</label><div class="val">' + f.polishingRate + '% seimaibuai</div></div>' : '') +
         (f.price ? '<div class="modal-field"><label>Price</label><div class="val">$' + Math.round(f.price) + '</div></div>' : '') +
         scoreHtml +
         (loc ? '<div class="modal-field"><label>Restaurant</label><div class="val">' + esc(loc) + '</div></div>' : '') +
@@ -808,6 +814,7 @@ function buildSharePage(data) {
         (b.designation ? '<div class="modal-field"><label>Designation</label><div class="val">' + esc(b.designation) + '</div></div>' : '') +
         (b.size ? '<div class="modal-field"><label>Size</label><div class="val">' + esc(b.size) + '</div></div>' : '') +
         (b.abv ? '<div class="modal-field"><label>ABV</label><div class="val">' + b.abv + '%</div></div>' : '') +
+        (b.polishingRate ? '<div class="modal-field"><label>Polishing Rate</label><div class="val">' + b.polishingRate + '% seimaibuai</div></div>' : '') +
         (b.age ? '<div class="modal-field"><label>Age</label><div class="val">' + b.age + ' years</div></div>' : '') +
         (b.quantity > 1 ? '<div class="modal-field"><label>Quantity</label><div class="val">' + b.quantity + '</div></div>' : '') +
         scoreHtml + priceHtml +
