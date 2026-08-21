@@ -915,6 +915,7 @@ function verifySakePolish(record, onUpdated) {
       if (r && r.polishingRate && r.polishingRate !== record.polishingRate) {
         record.polishingRate = r.polishingRate;
         record.polishingRateAuto = true;
+        record.polishingRateVerified = true;
         if (onUpdated) onUpdated(record);
       }
     });
@@ -923,9 +924,10 @@ function verifySakePolish(record, onUpdated) {
 // ---- Sake Polishing Rate Backfill ----
 async function runSakePolishBackfill() {
   const isSakeItem = x => x.category === 'sake' || isSake(x.type);
-  // Eligible: no rate yet, or a rate a previous backfill wrote (polishingRateAuto
-  // !== false), so re-running refreshes AI values without touching manual entries.
-  const eligible = x => isSakeItem(x) && x.name && (!x.polishingRate || x.polishingRateAuto !== false);
+  // Eligible: no rate yet, or a stale AI guess (auto but not yet web-verified).
+  // Manual entries (auto === false) and web-verified values are left alone.
+  const eligible = x => isSakeItem(x) && x.name &&
+    (!x.polishingRate || (x.polishingRateAuto !== false && !x.polishingRateVerified));
   const sakeBottles = cellar.filter(eligible);
   const sakeFinds = restaurantFinds.filter(eligible);
   const allSake = [...sakeBottles, ...sakeFinds];
@@ -946,9 +948,15 @@ async function runSakePolishBackfill() {
     const batch = allSake.slice(i, i + batchSize);
     if (statusEl) statusEl.textContent = `Verifying ${i + 1}–${Math.min(i + batchSize, total)} of ${total} on the web... (~1 min per batch)`;
 
-    const results = await enrichSake(batch.map(b => ({
+    const payload = batch.map(b => ({
       name: b.name, producer: b.producer, type: b.type, grape: b.grape, region: b.region,
-    })));
+    }));
+    let results = await enrichSake(payload);
+    if (!results) {
+      // One retry — the first calls after a server cold start often time out
+      await new Promise(r => setTimeout(r, 2000));
+      results = await enrichSake(payload);
+    }
 
     if (!results) {
       // Skip this batch but keep going — partial progress beats none
@@ -965,6 +973,7 @@ async function runSakePolishBackfill() {
       if (rate) {
         b.polishingRate = rate;
         b.polishingRateAuto = true;
+        b.polishingRateVerified = true;
         filled++;
       }
     });
@@ -1676,8 +1685,11 @@ function addBottle(event) {
       bottle.pending = existing.pending;
       bottle.country = existing.country;
       bottle.subRegion = existing.subRegion;
-      // Keep the AI/manual provenance flag unless the user actually changed the rate
-      if ((bottle.polishingRate || null) === (existing.polishingRate || null)) bottle.polishingRateAuto = existing.polishingRateAuto;
+      // Keep the AI/manual provenance flags unless the user actually changed the rate
+      if ((bottle.polishingRate || null) === (existing.polishingRate || null)) {
+        bottle.polishingRateAuto = existing.polishingRateAuto;
+        bottle.polishingRateVerified = existing.polishingRateVerified;
+      }
       if (!bottle.imageUrl) bottle.imageUrl = existing.imageUrl;
       // Preserve CSV market value if it existed — only re-estimate if price changed
       if (existing.marketValue && existing.marketValue > 0) {
