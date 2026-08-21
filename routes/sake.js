@@ -34,8 +34,10 @@ Use web search to check the brewery's, importer's, or retailers' product pages a
 Sake to look up:
 ${list}
 
+Also report each product's ABV percentage when the product page states it.
+
 After your research, respond with ONLY a JSON array containing one object per item, in the same order:
-[{"polishingRate": <number or null>, "source": "<domain the figure came from, or null>"}]`;
+[{"polishingRate": <number or null>, "abv": <number or null>, "source": "<domain the figures came from, or null>"}]`;
 
   const requestParams = {
     model: 'claude-opus-5',
@@ -74,7 +76,9 @@ After your research, respond with ONLY a JSON array containing one object per it
     const r = parsed[i] || {};
     const rate = (typeof r.polishingRate === 'number' && r.polishingRate >= 1 && r.polishingRate <= 99)
       ? Math.round(r.polishingRate) : null;
-    return { polishingRate: rate, source: typeof r.source === 'string' ? r.source.slice(0, 200) : null };
+    const abv = (typeof r.abv === 'number' && r.abv >= 1 && r.abv <= 75)
+      ? Math.round(r.abv * 10) / 10 : null;
+    return { polishingRate: rate, abv, source: typeof r.source === 'string' ? r.source.slice(0, 200) : null };
   });
 }
 
@@ -193,10 +197,12 @@ async function runBackfillJob(pool, userId, targets, job) {
         if (!rate) continue;
         const t = batch[k];
         // Merge-patch the JSONB so concurrent client edits to other fields survive
-        const patch = JSON.stringify({ polishingRate: rate, polishingRateAuto: true, polishingRateVerified: true });
+        const fields = { polishingRate: rate, polishingRateAuto: true, polishingRateVerified: true };
+        // Fill ABV as a bonus, but never overwrite an existing value
+        if (results[k].abv && !t.data.abv) fields.abv = results[k].abv;
         await pool.query(
           `UPDATE ${t.table} SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
-          [patch, t.id, userId]
+          [JSON.stringify(fields), t.id, userId]
         );
         job.filled++;
       }
