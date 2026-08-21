@@ -166,54 +166,65 @@ router.get('/backfill/status', (req, res) => {
   res.json({
     running: job.running, done: job.done, total: job.total,
     processed: job.processed, filled: job.filled, error: job.error,
+    elapsedSeconds: Math.round((Date.now() - job.startedAt) / 1000),
   });
 });
 
 async function runBackfillJob(pool, userId, targets, job) {
   const batchSize = 3;
+  const batches = [];
+  for (let i = 0; i < targets.length; i += batchSize) batches.push(targets.slice(i, i + batchSize));
+
   let failures = 0;
-  for (let i = 0; i < targets.length; i += batchSize) {
-    const batch = targets.slice(i, i + batchSize);
-    const payload = batch.map(t => ({
-      name: t.data.name, producer: t.data.producer, type: t.data.type, grape: t.data.grape, region: t.data.region,
-    }));
+  let nextBatch = 0;
 
-    let results = null;
-    try {
-      results = await lookupRates(payload);
-    } catch (err) {
+  const worker = async () => {
+    while (failures < 3) {
+      const index = nextBatch++;
+      if (index >= batches.length) return;
+      const batch = batches[index];
+      const payload = batch.map(t => ({
+        name: t.data.name, producer: t.data.producer, type: t.data.type, grape: t.data.grape, region: t.data.region,
+      }));
+
+      let results = null;
       try {
-        await new Promise(r => setTimeout(r, 2000));
         results = await lookupRates(payload);
-      } catch (err2) {
-        failures++;
-        console.error(`Backfill batch ${i / batchSize + 1} failed:`, err2.message);
+      } catch (err) {
+        try {
+          await new Promise(r => setTimeout(r, 2000));
+          results = await lookupRates(payload);
+        } catch (err2) {
+          failures++;
+          console.error(`Backfill batch ${index + 1} failed:`, err2.message);
+        }
       }
-    }
 
-    if (results) {
-      for (let k = 0; k < batch.length; k++) {
-        const rate = results[k] && results[k].polishingRate;
-        if (!rate) continue;
-        const t = batch[k];
-        // Merge-patch the JSONB so concurrent client edits to other fields survive
-        const fields = { polishingRate: rate, polishingRateAuto: true, polishingRateVerified: true };
-        // Fill ABV as a bonus, but never overwrite an existing value
-        if (results[k].abv && !t.data.abv) fields.abv = results[k].abv;
-        await pool.query(
-          `UPDATE ${t.table} SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
-          [JSON.stringify(fields), t.id, userId]
-        );
-        job.filled++;
+      if (results) {
+        for (let k = 0; k < batch.length; k++) {
+          const rate = results[k] && results[k].polishingRate;
+          if (!rate) continue;
+          const t = batch[k];
+          // Merge-patch the JSONB so concurrent client edits to other fields survive
+          const fields = { polishingRate: rate, polishingRateAuto: true, polishingRateVerified: true };
+          // Fill ABV as a bonus, but never overwrite an existing value
+          if (results[k].abv && !t.data.abv) fields.abv = results[k].abv;
+          await pool.query(
+            `UPDATE ${t.table} SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
+            [JSON.stringify(fields), t.id, userId]
+          );
+          job.filled++;
+        }
       }
-    }
 
-    job.processed = Math.min(i + batchSize, targets.length);
-    if (failures >= 3) {
-      job.error = 'Stopped after repeated lookup failures';
-      break;
+      job.processed += batch.length;
     }
-  }
+  };
+
+  // Two batches in flight at once — halves wall-clock time
+  await Promise.all([worker(), worker()]);
+
+  if (failures >= 3) job.error = 'Stopped after repeated lookup failures';
   job.running = false;
   job.done = true;
 }
