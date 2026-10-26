@@ -52,13 +52,17 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Demo account configuration
 const DEMO_EMAIL = 'test@test.com';
-const DEMO_PASSWORD = '123456';
+// Never hardcode the demo password — it must be supplied via the environment.
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || '';
 const DEMO_OPENAI_KEY = process.env.DEMO_OPENAI_KEY || '';
 
 // Seed demo account: POST /api/seed-demo (idempotent — safe to call multiple times)
 const bcryptSeed = require('bcryptjs');
 app.post('/api/seed-demo', async (req, res) => {
   try {
+    if (!DEMO_PASSWORD) {
+      return res.status(500).json({ error: 'DEMO_PASSWORD is not configured' });
+    }
     // Find source user (Tim — the main account, first non-demo user with bottles)
     const sourceUser = await pool.query(
       `SELECT id FROM users WHERE is_demo IS NOT TRUE AND email != $1
