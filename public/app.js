@@ -80,6 +80,8 @@ async function enterApp() {
       }
     }
   } catch {}
+  // Shared access card (owner: manage members; member: show whose cellar this is)
+  renderMembersCard();
   // Hide settings elements for demo accounts
   if (isDemoAccount) {
     const hiddenCards = ['Vision API', 'Import Collection', 'Data Management'];
@@ -329,6 +331,15 @@ async function syncNow() {
   await syncToServer();
   showToast('Synced');
 }
+
+// With shared access, two people edit the same cellar. Uploads replace the
+// whole collection from this device's cached copy, so re-download when the
+// app comes back into view and nothing is waiting to be uploaded.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !currentUser || syncTimer) return;
+  const last = Date.parse(localStorage.getItem('vino_last_sync') || '') || 0;
+  if (Date.now() - last > 30 * 1000) syncFromServer();
+});
 
 // ============ DATA LAYER ============
 
@@ -3278,6 +3289,136 @@ function updateApiKeyStatus() {
   } else {
     status.textContent = 'No key configured';
     status.className = 'api-key-status missing';
+  }
+}
+
+// ---- Shared access (members) ----
+
+let cellarMembers = [];
+
+async function renderMembersCard() {
+  const section = document.getElementById('membersSection');
+  if (!section || !currentUser) return;
+  const desc = document.getElementById('membersDesc');
+  const list = document.getElementById('membersList');
+  const form = document.getElementById('addMemberForm');
+
+  if (currentUser.isMember) {
+    const owner = currentUser.cellarOwner || {};
+    const who = owner.name || owner.email || 'another account';
+    desc.textContent = `You are signed in as a member of ${who}'s cellar. Everything you add or edit here is shared with them. Only the owner can manage who has access.`;
+    list.innerHTML = '';
+    form.style.display = 'none';
+    return;
+  }
+
+  form.style.display = '';
+  list.innerHTML = '<p class="members-empty">Loading...</p>';
+  try {
+    const resp = await fetch('/api/auth/members', { credentials: 'include' });
+    if (!resp.ok) throw new Error('Failed to load members');
+    const data = await resp.json();
+    cellarMembers = data.members || [];
+  } catch {
+    cellarMembers = [];
+    list.innerHTML = '<p class="members-empty">Could not load members.</p>';
+    return;
+  }
+  renderMembersList();
+}
+
+function renderMembersList() {
+  const list = document.getElementById('membersList');
+  if (!list) return;
+  if (cellarMembers.length === 0) {
+    list.innerHTML = '<p class="members-empty">No one else has access yet.</p>';
+    return;
+  }
+  list.innerHTML = cellarMembers.map(m => `
+    <div class="member-row">
+      <div class="member-info">
+        <div class="member-name">${escHTML(m.name || m.email)}</div>
+        ${m.name ? `<div class="member-email">${escHTML(m.email)}</div>` : ''}
+      </div>
+      <div class="member-actions">
+        <button class="btn btn-secondary btn-sm" onclick="resetMemberPassword('${m.id}')">Reset password</button>
+        <button class="btn btn-danger btn-sm" onclick="removeMember('${m.id}')">Remove</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addMember(e) {
+  e.preventDefault();
+  if (isDemoAccount) { showToast('Not available on the demo account'); return; }
+  const name = document.getElementById('memberName').value.trim();
+  const email = document.getElementById('memberEmail').value.trim();
+  const password = document.getElementById('memberPassword').value;
+  const errorEl = document.getElementById('memberError');
+  const btn = document.getElementById('addMemberBtn');
+  errorEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+  try {
+    const resp = await fetch('/api/auth/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name, email, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errorEl.textContent = data.error || 'Could not add member';
+      errorEl.style.display = 'block';
+      return;
+    }
+    cellarMembers.push(data);
+    renderMembersList();
+    document.getElementById('addMemberForm').reset();
+    showToast(`${data.name || data.email} can now sign in to this cellar`);
+  } catch {
+    errorEl.textContent = 'Connection error — try again';
+    errorEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add Member';
+  }
+}
+
+async function removeMember(id) {
+  const m = cellarMembers.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm(`Remove access for ${m.name || m.email}? They will no longer be able to sign in. Your bottles are not affected.`)) return;
+  try {
+    const resp = await fetch(`/api/auth/members/${id}`, { method: 'DELETE', credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Could not remove member'); return; }
+    cellarMembers = cellarMembers.filter(x => x.id !== id);
+    renderMembersList();
+    showToast('Access removed');
+  } catch {
+    showToast('Connection error — try again');
+  }
+}
+
+async function resetMemberPassword(id) {
+  const m = cellarMembers.find(x => x.id === id);
+  if (!m) return;
+  const password = prompt(`New password for ${m.name || m.email} (min 6 characters):`);
+  if (password === null) return;
+  if (password.length < 6) { showToast('Password must be at least 6 characters'); return; }
+  try {
+    const resp = await fetch(`/api/auth/members/${id}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Could not reset password'); return; }
+    showToast('Password updated');
+  } catch {
+    showToast('Connection error — try again');
   }
 }
 

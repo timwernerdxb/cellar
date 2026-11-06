@@ -837,6 +837,24 @@
           </div>
         </div>
 
+        <div class="settings-card" id="membersSection">
+          <h3>Shared Access</h3>
+          <p class="settings-desc" id="membersDesc">Give someone else their own sign-in to this cellar. They see and edit the same bottles, tastings and finds as you.</p>
+          <div id="membersList" class="members-list"></div>
+          <form id="addMemberForm" class="member-form" onsubmit="addMember(event)" autocomplete="off">
+            <div class="member-form-fields">
+              <input type="text" id="memberName" placeholder="Name" class="auth-input" autocomplete="off">
+              <input type="email" id="memberEmail" placeholder="Email" class="auth-input" required autocomplete="off">
+              <input type="password" id="memberPassword" placeholder="Password (min 6 characters)" class="auth-input" required minlength="6" autocomplete="new-password">
+            </div>
+            <p class="auth-error" id="memberError" style="display:none"></p>
+            <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.25rem;justify-content:flex-start;align-items:center;gap:0.75rem">
+              <button type="submit" class="btn btn-primary btn-sm" id="addMemberBtn">Add Member</button>
+              <span class="settings-desc">Share the password with them; they can sign in right away.</span>
+            </div>
+          </form>
+        </div>
+
         <div class="settings-card">
           <h3>Estimate Critic Scores</h3>
           <p class="settings-desc">Use AI to estimate critic/community scores (out of 100) for bottles that don't have one yet. Based on Wine Spectator, CellarTracker, Vivino ratings and producer reputation.</p>

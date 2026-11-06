@@ -39,6 +39,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS share_show_values BOOLEAN DEFAULT fal
 -- Demo account flag
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT false;
 
+-- Shared access: a user with cellar_owner_id set logs in with their own
+-- credentials but reads and writes the owner's cellar.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cellar_owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_users_cellar_owner ON users(cellar_owner_id);
+
 -- Bottle photos stored server-side (referenced as /api/images/i/<id>)
 CREATE TABLE IF NOT EXISTS user_images (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
