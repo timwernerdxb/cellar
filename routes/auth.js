@@ -18,10 +18,18 @@ function setSessionCookie(res, user) {
   });
 }
 
+// Public address used in invitation links. APP_URL overrides; otherwise the
+// canonical domain, except on localhost where the request host is used so
+// links work in development.
+const CANONICAL_APP_URL = 'https://app.mycellar.one';
 function appUrl(req) {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
-  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-  return `${proto}://${req.get('host')}`;
+  const host = req.get('host') || '';
+  if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host)) {
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    return `${proto}://${host}`;
+  }
+  return CANONICAL_APP_URL;
 }
 
 // Register
