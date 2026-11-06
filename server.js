@@ -12,12 +12,45 @@ const PORT = process.env.PORT || 3000;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : false,
+  // Railway's network silently drops idle TCP connections. Without keepalives
+  // the pool hands out a dead socket and the first query on it fails with
+  // ECONNRESET, which surfaces to users as "Server error" on login.
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
 });
 app.locals.pool = pool;
 
 pool.on('error', (err) => {
   console.error('Unexpected pool error:', err.message);
 });
+
+// Retry read-only queries once when the connection was dropped underneath us
+// (reset socket, Postgres restart, admin shutdown). The failed client is
+// discarded by pg-pool, so the retry runs on a fresh connection. Writes are
+// not retried: a reset after the statement reached the server could otherwise
+// be applied twice.
+const TRANSIENT_DB_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT',
+  '57P01', '57P02', '57P03', // admin_shutdown, crash_shutdown, cannot_connect_now
+  '08000', '08003', '08006', // connection_exception, does_not_exist, failure
+]);
+function isTransientDbError(err) {
+  return TRANSIENT_DB_CODES.has(err?.code) || /Connection terminated/i.test(err?.message || '');
+}
+const rawPoolQuery = pool.query.bind(pool);
+pool.query = async function retryingQuery(...args) {
+  const text = typeof args[0] === 'string' ? args[0] : args[0]?.text;
+  const isRead = typeof text === 'string' && /^\s*(select|with)\b/i.test(text);
+  try {
+    return await rawPoolQuery(...args);
+  } catch (err) {
+    if (!isRead || !isTransientDbError(err)) throw err;
+    console.warn(`Transient DB error (${err.code || err.message}); retrying query once`);
+    return rawPoolQuery(...args);
+  }
+};
 
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
