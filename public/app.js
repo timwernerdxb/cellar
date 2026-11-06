@@ -39,6 +39,12 @@ async function checkAuthState() {
     await loadSharedCellar(sharePath[1]);
     return;
   }
+  // Invitation link: let the invitee set a password before anything else
+  const invitePath = window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)$/);
+  if (invitePath) {
+    await showInviteLanding(invitePath[1]);
+    return;
+  }
   try {
     const resp = await fetch('/api/auth/me', { credentials: 'include' });
     if (resp.ok) {
@@ -51,6 +57,89 @@ async function checkAuthState() {
   } catch {
     currentUser = null;
     showWelcome();
+  }
+}
+
+// ---- Accepting an invitation ----
+
+let pendingInviteToken = null;
+
+async function showInviteLanding(token) {
+  pendingInviteToken = token;
+  showWelcome();
+  const box = document.getElementById('inviteWelcome');
+  const form = document.getElementById('inviteForm');
+  const invalid = document.getElementById('inviteInvalid');
+  document.getElementById('welcomeAuthForm').style.display = 'none';
+  box.style.display = 'block';
+  try {
+    const resp = await fetch(`/api/auth/invites/${encodeURIComponent(token)}`);
+    const data = await resp.json();
+    if (!resp.ok) {
+      form.style.display = 'none';
+      invalid.style.display = 'block';
+      document.getElementById('inviteTitle').textContent = 'Invitation not available';
+      document.getElementById('inviteSub').textContent = '';
+      document.getElementById('inviteInvalidMsg').textContent = data.error || 'This invitation link is not valid.';
+      return;
+    }
+    document.getElementById('inviteTitle').textContent = `${data.ownerName} invited you to their cellar`;
+    document.getElementById('inviteSub').textContent = 'Choose a password for your own sign-in. You will see and edit the same collection.';
+    document.getElementById('inviteEmail').value = data.email;
+    document.getElementById('invitePassword').focus();
+  } catch {
+    form.style.display = 'none';
+    invalid.style.display = 'block';
+    document.getElementById('inviteInvalidMsg').textContent = 'Connection error — reload to try again.';
+  }
+}
+
+function dismissInvite(e) {
+  if (e) e.preventDefault();
+  pendingInviteToken = null;
+  history.replaceState(null, '', '/');
+  document.getElementById('inviteWelcome').style.display = 'none';
+  document.getElementById('welcomeAuthForm').style.display = '';
+}
+
+async function handleInviteAccept(e) {
+  e.preventDefault();
+  const name = document.getElementById('inviteName').value.trim();
+  const password = document.getElementById('invitePassword').value;
+  const errorEl = document.getElementById('inviteError');
+  const btn = document.getElementById('inviteSubmitBtn');
+  errorEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Setting up...';
+  try {
+    const resp = await fetch(`/api/auth/invites/${encodeURIComponent(pendingInviteToken)}/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errorEl.textContent = data.error || 'Something went wrong';
+      errorEl.style.display = 'block';
+      return;
+    }
+    // Start from the shared cellar, not whatever this browser had cached
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TASTINGS_KEY);
+    localStorage.removeItem(FINDS_KEY);
+    localStorage.setItem('vino_synced', '1');
+    cellar = []; tastings = []; restaurantFinds = [];
+    dismissInvite();
+    currentUser = data;
+    showToast(`Welcome${data.name ? ', ' + data.name : ''}! You now share ${data.cellarOwner?.name || 'this'} cellar.`);
+    await enterApp();
+  } catch {
+    errorEl.textContent = 'Connection error — try again';
+    errorEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Accept invitation';
   }
 }
 
@@ -80,6 +169,8 @@ async function enterApp() {
       }
     }
   } catch {}
+  // Shared access card (owner: manage members; member: show whose cellar this is)
+  renderMembersCard();
   // Hide settings elements for demo accounts
   if (isDemoAccount) {
     const hiddenCards = ['Vision API', 'Import Collection', 'Data Management'];
@@ -329,6 +420,15 @@ async function syncNow() {
   await syncToServer();
   showToast('Synced');
 }
+
+// With shared access, two people edit the same cellar. Uploads replace the
+// whole collection from this device's cached copy, so re-download when the
+// app comes back into view and nothing is waiting to be uploaded.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !currentUser || syncTimer) return;
+  const last = Date.parse(localStorage.getItem('vino_last_sync') || '') || 0;
+  if (Date.now() - last > 30 * 1000) syncFromServer();
+});
 
 // ============ DATA LAYER ============
 
@@ -3278,6 +3378,226 @@ function updateApiKeyStatus() {
   } else {
     status.textContent = 'No key configured';
     status.className = 'api-key-status missing';
+  }
+}
+
+// ---- Shared access (members & invitations) ----
+
+let cellarMembers = [];
+let cellarInvites = [];
+let inviteEmailConfigured = false;
+
+async function renderMembersCard() {
+  const section = document.getElementById('membersSection');
+  if (!section || !currentUser) return;
+  const desc = document.getElementById('membersDesc');
+  const list = document.getElementById('membersList');
+  const form = document.getElementById('addMemberForm');
+  document.getElementById('inviteResult').style.display = 'none';
+
+  if (currentUser.isMember) {
+    const owner = currentUser.cellarOwner || {};
+    const who = owner.name || owner.email || 'another account';
+    desc.textContent = `You are signed in as a member of ${who}'s cellar. Everything you add or edit here is shared with them. Only the owner can manage who has access.`;
+    list.innerHTML = '';
+    form.style.display = 'none';
+    return;
+  }
+
+  form.style.display = '';
+  list.innerHTML = '<p class="members-empty">Loading...</p>';
+  try {
+    const resp = await fetch('/api/auth/members', { credentials: 'include' });
+    if (!resp.ok) throw new Error('Failed to load members');
+    const data = await resp.json();
+    cellarMembers = data.members || [];
+    cellarInvites = data.invites || [];
+    inviteEmailConfigured = !!data.emailConfigured;
+  } catch {
+    cellarMembers = []; cellarInvites = [];
+    list.innerHTML = '<p class="members-empty">Could not load members.</p>';
+    return;
+  }
+  document.getElementById('memberHint').textContent = inviteEmailConfigured
+    ? 'We email them a link that lets them choose a password.'
+    : 'You will get a link to send them; it lets them choose a password.';
+  renderMembersList();
+}
+
+function daysUntil(iso) {
+  return Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 86400000));
+}
+
+function renderMembersList() {
+  const list = document.getElementById('membersList');
+  if (!list) return;
+  if (cellarMembers.length === 0 && cellarInvites.length === 0) {
+    list.innerHTML = '<p class="members-empty">No one else has access yet.</p>';
+    return;
+  }
+  const memberRows = cellarMembers.map(m => `
+    <div class="member-row">
+      <div class="member-info">
+        <div class="member-name">${escHTML(m.name || m.email)}</div>
+        ${m.name ? `<div class="member-email">${escHTML(m.email)}</div>` : ''}
+      </div>
+      <div class="member-actions">
+        <button class="btn btn-secondary btn-sm" onclick="resetMemberPassword('${m.id}')">Reset password</button>
+        <button class="btn btn-danger btn-sm" onclick="removeMember('${m.id}')">Remove</button>
+      </div>
+    </div>
+  `);
+  const inviteRows = cellarInvites.map(i => `
+    <div class="member-row pending">
+      <div class="member-info">
+        <div class="member-name">${escHTML(i.email)}</div>
+        <div class="member-status">Invited · expires in ${daysUntil(i.expiresAt)} day${daysUntil(i.expiresAt) === 1 ? '' : 's'}</div>
+      </div>
+      <div class="member-actions">
+        <button class="btn btn-secondary btn-sm" onclick="showInviteLink('${i.id}')">Copy link</button>
+        ${inviteEmailConfigured ? `<button class="btn btn-secondary btn-sm" onclick="resendInvite('${i.id}')">Resend</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="revokeInvite('${i.id}')">Revoke</button>
+      </div>
+    </div>
+  `);
+  list.innerHTML = memberRows.concat(inviteRows).join('');
+}
+
+function presentInviteResult(data, verb) {
+  const box = document.getElementById('inviteResult');
+  const msg = document.getElementById('inviteResultMsg');
+  document.getElementById('inviteResultLink').value = data.invite.link;
+  if (data.emailSent) {
+    msg.textContent = `Invitation ${verb} to ${data.invite.email}. You can also send them this link directly:`;
+  } else if (data.emailReason === 'not_configured') {
+    msg.textContent = `Send this link to ${data.invite.email}. It lets them choose a password and expires in 7 days:`;
+  } else {
+    msg.textContent = `The email to ${data.invite.email} could not be sent. Send them this link instead:`;
+  }
+  box.style.display = 'block';
+}
+
+async function sendInvite(e) {
+  e.preventDefault();
+  if (isDemoAccount) { showToast('Not available on the demo account'); return; }
+  const email = document.getElementById('memberEmail').value.trim();
+  const errorEl = document.getElementById('memberError');
+  const btn = document.getElementById('addMemberBtn');
+  errorEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  try {
+    const resp = await fetch('/api/auth/invites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errorEl.textContent = data.error || 'Could not send invitation';
+      errorEl.style.display = 'block';
+      return;
+    }
+    cellarInvites = cellarInvites.filter(i => i.email !== data.invite.email).concat([data.invite]);
+    renderMembersList();
+    document.getElementById('addMemberForm').reset();
+    presentInviteResult(data, 'emailed');
+    showToast(data.emailSent ? `Invitation sent to ${data.invite.email}` : 'Invitation link ready');
+  } catch {
+    errorEl.textContent = 'Connection error — try again';
+    errorEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Invite';
+  }
+}
+
+function showInviteLink(id) {
+  const i = cellarInvites.find(x => x.id === id);
+  if (!i) return;
+  presentInviteResult({ invite: i, emailSent: false, emailReason: 'not_configured' }, '');
+  copyInviteLink();
+}
+
+async function copyInviteLink() {
+  const input = document.getElementById('inviteResultLink');
+  try {
+    await navigator.clipboard.writeText(input.value);
+    showToast('Invite link copied');
+  } catch {
+    input.select();
+    showToast('Select the link and copy it');
+  }
+}
+
+async function resendInvite(id) {
+  const i = cellarInvites.find(x => x.id === id);
+  if (!i) return;
+  try {
+    const resp = await fetch(`/api/auth/invites/${id}/resend`, { method: 'POST', credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Could not resend'); return; }
+    cellarInvites = cellarInvites.map(x => x.id === id ? data.invite : x);
+    renderMembersList();
+    presentInviteResult(data, 'resent');
+    showToast(data.emailSent ? `Invitation resent to ${i.email}` : 'Email not sent — copy the link instead');
+  } catch {
+    showToast('Connection error — try again');
+  }
+}
+
+async function revokeInvite(id) {
+  const i = cellarInvites.find(x => x.id === id);
+  if (!i) return;
+  if (!confirm(`Cancel the invitation for ${i.email}? Their link will stop working.`)) return;
+  try {
+    const resp = await fetch(`/api/auth/invites/${id}`, { method: 'DELETE', credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Could not revoke'); return; }
+    cellarInvites = cellarInvites.filter(x => x.id !== id);
+    renderMembersList();
+    document.getElementById('inviteResult').style.display = 'none';
+    showToast('Invitation cancelled');
+  } catch {
+    showToast('Connection error — try again');
+  }
+}
+
+async function removeMember(id) {
+  const m = cellarMembers.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm(`Remove access for ${m.name || m.email}? They will no longer be able to sign in. Your bottles are not affected.`)) return;
+  try {
+    const resp = await fetch(`/api/auth/members/${id}`, { method: 'DELETE', credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Could not remove member'); return; }
+    cellarMembers = cellarMembers.filter(x => x.id !== id);
+    renderMembersList();
+    showToast('Access removed');
+  } catch {
+    showToast('Connection error — try again');
+  }
+}
+
+async function resetMemberPassword(id) {
+  const m = cellarMembers.find(x => x.id === id);
+  if (!m) return;
+  const password = prompt(`New password for ${m.name || m.email} (min 6 characters):`);
+  if (password === null) return;
+  if (password.length < 6) { showToast('Password must be at least 6 characters'); return; }
+  try {
+    const resp = await fetch(`/api/auth/members/${id}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showToast(data.error || 'Could not reset password'); return; }
+    showToast('Password updated');
+  } catch {
+    showToast('Connection error — try again');
   }
 }
 
