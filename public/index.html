@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <script>
@@ -122,6 +122,21 @@
           <p class="welcome-subtitle">Track your wine, whiskey &amp; spirits collection</p>
         </div>
         <div class="welcome-card">
+          <div id="inviteWelcome" style="display:none">
+            <h2 class="invite-title" id="inviteTitle">You've been invited</h2>
+            <p class="invite-sub" id="inviteSub"></p>
+            <form id="inviteForm" onsubmit="handleInviteAccept(event)" class="welcome-form">
+              <input type="email" id="inviteEmail" class="welcome-input" readonly tabindex="-1">
+              <input type="text" id="inviteName" placeholder="Your name" class="welcome-input" autocomplete="name">
+              <input type="password" id="invitePassword" placeholder="Choose a password (min 6 characters)" required minlength="6" class="welcome-input" autocomplete="new-password">
+              <p class="auth-error" id="inviteError" style="display:none"></p>
+              <button type="submit" class="btn btn-primary welcome-btn" id="inviteSubmitBtn">Accept invitation</button>
+            </form>
+            <div id="inviteInvalid" style="display:none">
+              <p class="auth-error" id="inviteInvalidMsg" style="display:block;font-size:0.85rem"></p>
+              <p class="auth-toggle"><a href="/" onclick="dismissInvite(event)">Go to sign in</a></p>
+            </div>
+          </div>
           <form id="welcomeAuthForm" onsubmit="handleWelcomeAuth(event)" class="welcome-form">
             <input type="email" id="welcomeEmail" placeholder="Email" required class="welcome-input">
             <input type="password" id="welcomePassword" placeholder="Password" required minlength="6" class="welcome-input">
@@ -839,20 +854,23 @@
 
         <div class="settings-card" id="membersSection">
           <h3>Shared Access</h3>
-          <p class="settings-desc" id="membersDesc">Give someone else their own sign-in to this cellar. They see and edit the same bottles, tastings and finds as you.</p>
+          <p class="settings-desc" id="membersDesc">Invite someone to share this cellar. They get a link to choose their own password, then see and edit the same bottles, tastings and finds as you.</p>
           <div id="membersList" class="members-list"></div>
-          <form id="addMemberForm" class="member-form" onsubmit="addMember(event)" autocomplete="off">
-            <div class="member-form-fields">
-              <input type="text" id="memberName" placeholder="Name" class="auth-input" autocomplete="off">
-              <input type="email" id="memberEmail" placeholder="Email" class="auth-input" required autocomplete="off">
-              <input type="password" id="memberPassword" placeholder="Password (min 6 characters)" class="auth-input" required minlength="6" autocomplete="new-password">
+          <form id="addMemberForm" class="member-form" onsubmit="sendInvite(event)" autocomplete="off">
+            <div class="member-form-fields invite-fields">
+              <input type="email" id="memberEmail" placeholder="Email address" class="auth-input" required autocomplete="off">
+              <button type="submit" class="btn btn-primary btn-sm" id="addMemberBtn">Send Invite</button>
             </div>
             <p class="auth-error" id="memberError" style="display:none"></p>
-            <div class="form-actions" style="border-top:none;padding-top:0.75rem;margin-top:0.25rem;justify-content:flex-start;align-items:center;gap:0.75rem">
-              <button type="submit" class="btn btn-primary btn-sm" id="addMemberBtn">Add Member</button>
-              <span class="settings-desc">Share the password with them; they can sign in right away.</span>
-            </div>
+            <p class="settings-desc" id="memberHint" style="margin-top:0.5rem"></p>
           </form>
+          <div id="inviteResult" class="invite-result" style="display:none">
+            <p class="settings-desc" id="inviteResultMsg"></p>
+            <div class="invite-link-row">
+              <input type="text" id="inviteResultLink" class="auth-input" readonly onclick="this.select()">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="copyInviteLink()">Copy link</button>
+            </div>
+          </div>
         </div>
 
         <div class="settings-card">
@@ -935,6 +953,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>
